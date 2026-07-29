@@ -36,8 +36,7 @@ export default function OnboardingPage() {
       await api.completeOnboarding({ gradeId, subjectIds: [subjectId] });
       router.push("/today");
     } catch (err: any) {
-      // /onboarding/complete لم يُبنَ منطقه بعد (راجع services/api/internal/router/router.go)
-      setError("هذه الخطوة قيد البناء حاليًا في الخادم: " + (err?.message ?? ""));
+      setError(err?.message ?? "تعذّر إكمال التهيئة، حاول مجددًا");
     } finally {
       setLoading(false);
     }

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
-import { api, setAccessToken } from "@/lib/api";
+import { api, setTokens } from "@/lib/api";
 
 // خطوة 3 من رحلة الطالب الأولى (docs/user-journeys.md): إنشاء الحساب
 export default function RegisterPage() {
@@ -28,7 +28,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const result = await api.register(parsed.data);
-      setAccessToken(result.accessToken);
+      setTokens(result);
       router.push("/onboarding");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر إنشاء الحساب");

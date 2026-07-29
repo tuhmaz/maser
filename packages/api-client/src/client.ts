@@ -21,6 +21,12 @@ export class ApiError extends Error {
 export interface ApiClientOptions {
   baseUrl: string;
   getAccessToken?: () => string | null | undefined;
+  /** رمز التحديث المخزن — إن وُجد يجدَّد الوصول تلقائيًا عند انتهاء الجلسة. */
+  getRefreshToken?: () => string | null | undefined;
+  /** يُستدعى بعد نجاح التجديد لتخزين الرمزين الجديدين. */
+  onTokensUpdated?: (auth: AuthResponse) => void;
+  /** يُستدعى عند فشل التجديد نهائيًا (مثلًا: توجيه المستخدم لصفحة الدخول). */
+  onAuthFailure?: () => void;
 }
 
 /**
@@ -29,31 +35,74 @@ export interface ApiClientOptions {
  *
  * القاعدة الذهبية (docs/security-requirements.md): هذا العميل لا يحسب أي نتيجة
  * أو صلاحية محليًا؛ كل قرار يُتخذ من استجابة الخادم فقط.
+ *
+ * الجلسة: عند رد 401 على مسار محمي يحاول العميل تجديد الرمز مرة واحدة عبر
+ * /auth/refresh ثم يعيد الطلب؛ إن فشل التجديد يستدعي onAuthFailure.
  */
 export class ApiClient {
   private baseUrl: string;
   private getAccessToken?: () => string | null | undefined;
+  private getRefreshToken?: () => string | null | undefined;
+  private onTokensUpdated?: (auth: AuthResponse) => void;
+  private onAuthFailure?: () => void;
+  private refreshInFlight: Promise<boolean> | null = null;
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.getAccessToken = options.getAccessToken;
+    this.getRefreshToken = options.getRefreshToken;
+    this.onTokensUpdated = options.onTokensUpdated;
+    this.onAuthFailure = options.onAuthFailure;
   }
 
-  private async request<T>(
-    path: string,
-    init?: RequestInit
-  ): Promise<T> {
+  private async rawRequest(path: string, init?: RequestInit): Promise<Response> {
     const token = this.getAccessToken?.();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(init?.headers as Record<string, string> | undefined),
     };
     if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(`${this.baseUrl}${path}`, { ...init, headers });
+  }
 
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers,
-    });
+  /** يجدّد الجلسة مرة واحدة مهما تزامنت الطلبات الفاشلة (single-flight). */
+  private tryRefresh(): Promise<boolean> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = (async () => {
+        const refreshToken = this.getRefreshToken?.();
+        if (!refreshToken) return false;
+        try {
+          const res = await fetch(`${this.baseUrl}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+          });
+          if (!res.ok) return false;
+          const auth = (await res.json()) as AuthResponse;
+          this.onTokensUpdated?.(auth);
+          return true;
+        } catch {
+          return false;
+        }
+      })().finally(() => {
+        this.refreshInFlight = null;
+      });
+    }
+    return this.refreshInFlight;
+  }
+
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    let res = await this.rawRequest(path, init);
+
+    // 401 على مسار محمي (غير مسارات المصادقة نفسها) → جدّد وأعد المحاولة مرة واحدة
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) {
+        res = await this.rawRequest(path, init);
+      } else {
+        this.onAuthFailure?.();
+      }
+    }
 
     if (res.status === 204) return undefined as T;
 

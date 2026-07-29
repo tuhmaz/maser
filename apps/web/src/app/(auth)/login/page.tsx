@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
-import { api, setAccessToken } from "@/lib/api";
+import { api, setTokens } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,7 +26,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const result = await api.login(parsed.data);
-      setAccessToken(result.accessToken);
+      setTokens(result);
       router.push(result.user.onboardingCompleted ? "/dashboard" : "/onboarding");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر تسجيل الدخول");

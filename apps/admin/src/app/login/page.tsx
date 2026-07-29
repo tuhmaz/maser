@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
-import { api, setAccessToken } from "@/lib/api";
+import { api, setTokens } from "@/lib/api";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -32,7 +32,7 @@ export default function AdminLoginPage() {
         setError("هذا الحساب لا يملك صلاحية الوصول إلى لوحة الإدارة");
         return;
       }
-      setAccessToken(result.accessToken);
+      setTokens(result);
       router.push("/");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر تسجيل الدخول");
