@@ -17,10 +17,19 @@ import (
 func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	userRepo := repository.NewUserRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
+	questionRepo := repository.NewQuestionRepository(db)
+	attemptRepo := repository.NewAttemptRepository(db)
+	learningRepo := repository.NewLearningRepository(db)
+
 	authService := service.NewAuthService(cfg, userRepo, sessionRepo)
+	quizService := service.NewQuizService(db, questionRepo, attemptRepo, learningRepo)
 
 	authHandler := handlers.NewAuthHandler(authService)
 	curriculumHandler := handlers.NewCurriculumHandler(db)
+	onboardingHandler := handlers.NewOnboardingHandler(db)
+	quizHandler := handlers.NewQuizHandler(quizService)
+	progressHandler := handlers.NewProgressHandler(db)
+	mistakesHandler := handlers.NewMistakesHandler(db, learningRepo)
 
 	requireAuth := middleware.RequireAuth(cfg.JWTAccessSecret)
 	requireAdmin := middleware.RequireRole("admin", "super_admin")
@@ -41,8 +50,8 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 
 	// --- التهيئة ---
 	onboarding := app.Group("/onboarding", requireAuth)
-	onboarding.Get("/options", handlers.NotImplemented)
-	onboarding.Post("/complete", handlers.NotImplemented)
+	onboarding.Get("/options", onboardingHandler.Options)
+	onboarding.Post("/complete", onboardingHandler.Complete)
 
 	// --- المنهاج (قراءة عامة، لا تتطلب مصادقة) ---
 	app.Get("/grades", curriculumHandler.ListGrades)
@@ -53,25 +62,25 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	app.Get("/lessons/:lessonId", curriculumHandler.GetLesson)
 
 	// --- الاختبارات (محرك الاختبارات) ---
-	app.Post("/diagnostic/start", requireAuth, handlers.NotImplemented)
-	app.Post("/quizzes/:quizId/start", requireAuth, handlers.NotImplemented)
-	app.Get("/attempts/:attemptId", requireAuth, handlers.NotImplemented)
-	app.Post("/attempts/:attemptId/answers", requireAuth, handlers.NotImplemented)
-	app.Post("/attempts/:attemptId/submit", requireAuth, handlers.NotImplemented)
-	app.Get("/attempts/:attemptId/result", requireAuth, handlers.NotImplemented)
+	app.Post("/diagnostic/start", requireAuth, quizHandler.StartDiagnostic)
+	app.Post("/quizzes/:quizId/start", requireAuth, quizHandler.StartQuiz)
+	app.Get("/attempts/:attemptId", requireAuth, quizHandler.GetAttempt)
+	app.Post("/attempts/:attemptId/answers", requireAuth, quizHandler.SaveAnswer)
+	app.Post("/attempts/:attemptId/submit", requireAuth, quizHandler.Submit)
+	app.Get("/attempts/:attemptId/result", requireAuth, quizHandler.GetResult)
 
 	// --- التقدم ---
 	progress := app.Group("/progress", requireAuth)
-	progress.Get("/", handlers.NotImplemented)
-	progress.Get("/subjects/:subjectId", handlers.NotImplemented)
-	progress.Get("/skills", handlers.NotImplemented)
-	progress.Get("/skills/:skillId", handlers.NotImplemented)
+	progress.Get("/", progressHandler.Overview)
+	progress.Get("/subjects/:subjectId", handlers.NotImplemented) // يُبنى مع خريطة المادة التفصيلية
+	progress.Get("/skills", progressHandler.Skills)
+	progress.Get("/skills/:skillId", progressHandler.Skill)
 
 	// --- دفتر الأخطاء ---
 	mistakes := app.Group("/mistakes", requireAuth)
-	mistakes.Get("/", handlers.NotImplemented)
-	mistakes.Get("/due", handlers.NotImplemented)
-	mistakes.Post("/:mistakeId/review", handlers.NotImplemented)
+	mistakes.Get("/", mistakesHandler.List)
+	mistakes.Get("/due", mistakesHandler.Due)
+	mistakes.Post("/:mistakeId/review", mistakesHandler.Review)
 
 	// --- المهمة اليومية ---
 	app.Get("/daily-plan", requireAuth, handlers.NotImplemented)
