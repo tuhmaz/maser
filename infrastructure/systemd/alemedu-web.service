@@ -1,0 +1,20 @@
+[Unit]
+Description=Alemedu Web (Next.js — واجهة الطالب)
+After=network.target alemedu-api.service
+
+[Service]
+Type=simple
+User=alemedu
+WorkingDirectory=/opt/alemedu/apps/web
+EnvironmentFile=/opt/alemedu/apps/web/.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

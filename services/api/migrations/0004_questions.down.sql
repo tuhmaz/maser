@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS question_reports;
+DROP TABLE IF EXISTS question_tags;
+DROP TABLE IF EXISTS question_skills;
+DROP TABLE IF EXISTS question_media;
+DROP TABLE IF EXISTS question_explanations;
+DROP TABLE IF EXISTS question_answers;
+DROP TABLE IF EXISTS question_options;
+DROP TABLE IF EXISTS question_versions;
+DROP TABLE IF EXISTS questions;

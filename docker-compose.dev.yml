@@ -1,0 +1,27 @@
+# docker-compose.dev.yml — PostgreSQL و Redis للتطوير المحلي فقط.
+# لا يُستخدم هذا الملف في staging أو production (راجع docs/deployment-plan.md:
+# البنية التحتية هناك تُدار عبر systemd + Nginx على خادم فعلي).
+#
+# تشغيل: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: alemedu
+      POSTGRES_PASSWORD: alemedu
+      POSTGRES_DB: alemedu_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - alemedu_pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  alemedu_pg_data:

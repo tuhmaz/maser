@@ -1,0 +1,20 @@
+[Unit]
+Description=Alemedu Admin (Next.js — لوحة الإدارة)
+After=network.target alemedu-api.service
+
+[Service]
+Type=simple
+User=alemedu
+WorkingDirectory=/opt/alemedu/apps/admin
+EnvironmentFile=/opt/alemedu/apps/admin/.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

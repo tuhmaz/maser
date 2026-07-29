@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS student_achievements;
+DROP TABLE IF EXISTS achievements;
+DROP TABLE IF EXISTS student_streaks;
+DROP TABLE IF EXISTS task_completions;
+DROP TABLE IF EXISTS daily_tasks;
+DROP TABLE IF EXISTS daily_plans;
+DROP TABLE IF EXISTS review_schedules;
+DROP TABLE IF EXISTS student_mistakes;
+DROP TABLE IF EXISTS student_skill_mastery;

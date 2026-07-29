@@ -1,0 +1,21 @@
+[Unit]
+Description=Alemedu Worker (jobs خلفية دورية)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=alemedu
+WorkingDirectory=/opt/alemedu/services/worker
+EnvironmentFile=/opt/alemedu/services/worker/.env
+ExecStart=/opt/alemedu/services/worker/bin/alemedu-worker
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

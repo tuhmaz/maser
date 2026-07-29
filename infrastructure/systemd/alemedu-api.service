@@ -1,0 +1,22 @@
+[Unit]
+Description=Alemedu API (Go Fiber)
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=alemedu
+WorkingDirectory=/opt/alemedu/services/api
+EnvironmentFile=/opt/alemedu/services/api/.env
+ExecStart=/opt/alemedu/services/api/bin/alemedu-api
+Restart=on-failure
+RestartSec=5
+# فشل هذه الخدمة يجب ألا يكشف أسرار النظام (راجع docs/deployment-plan.md شرط القبول)
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

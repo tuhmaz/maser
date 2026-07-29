@@ -1,0 +1,511 @@
+openapi: 3.0.3
+info:
+  title: Alemedu API
+  description: >
+    عقد الـ API الرسمي لمنصة Alemedu التعليمية.
+    راجع docs/api-contract.md للشرح النصي المرافق.
+  version: "0.1.0"
+servers:
+  - url: https://api.alemedu.com
+    description: إنتاج
+  - url: https://staging-api.alemedu.com
+    description: اختبار
+  - url: http://localhost:8080
+    description: محلي
+
+tags:
+  - name: auth
+  - name: onboarding
+  - name: curriculum
+  - name: attempts
+  - name: progress
+  - name: mistakes
+  - name: daily-plan
+  - name: admin
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: إنشاء حساب جديد
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                displayName: { type: string }
+      responses:
+        "201":
+          description: تم إنشاء الحساب
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: تسجيل الدخول
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: تم تسجيل الدخول
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: تسجيل الخروج
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: تم تسجيل الخروج }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: تحديث رمز الجلسة
+      responses:
+        "200":
+          description: رمز جديد
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: طلب استعادة كلمة المرور
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "202": { description: تم إرسال رابط الاستعادة إن وُجد الحساب }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: إعادة تعيين كلمة المرور
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200": { description: تم تحديث كلمة المرور }
+        "400": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: بيانات المستخدم الحالي
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: المستخدم الحالي
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /onboarding/options:
+    get:
+      tags: [onboarding]
+      summary: خيارات التهيئة (الصفوف/المواد المتاحة)
+      responses:
+        "200": { description: قائمة الخيارات }
+
+  /onboarding/complete:
+    post:
+      tags: [onboarding]
+      summary: إكمال تهيئة حساب الطالب
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gradeId, subjectIds]
+              properties:
+                gradeId: { type: string, format: uuid }
+                subjectIds:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "200": { description: تمت التهيئة }
+
+  /grades:
+    get:
+      tags: [curriculum]
+      summary: قائمة الصفوف
+      responses:
+        "200": { description: قائمة الصفوف }
+
+  /grades/{gradeId}/subjects:
+    get:
+      tags: [curriculum]
+      parameters:
+        - $ref: "#/components/parameters/GradeId"
+      responses:
+        "200": { description: مواد الصف }
+
+  /subjects/{subjectId}:
+    get:
+      tags: [curriculum]
+      parameters:
+        - $ref: "#/components/parameters/SubjectId"
+      responses:
+        "200": { description: تفاصيل المادة }
+
+  /subjects/{subjectId}/units:
+    get:
+      tags: [curriculum]
+      parameters:
+        - $ref: "#/components/parameters/SubjectId"
+      responses:
+        "200": { description: وحدات المادة }
+
+  /units/{unitId}/lessons:
+    get:
+      tags: [curriculum]
+      parameters:
+        - name: unitId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: دروس الوحدة }
+
+  /lessons/{lessonId}:
+    get:
+      tags: [curriculum]
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: تفاصيل الدرس }
+
+  /diagnostic/start:
+    post:
+      tags: [attempts]
+      summary: بدء الاختبار التشخيصي
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: محاولة جديدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attempt" }
+
+  /quizzes/{quizId}/start:
+    post:
+      tags: [attempts]
+      summary: بدء اختبار (درس/وحدة/مراجعة)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: quizId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: محاولة جديدة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attempt" }
+
+  /attempts/{attemptId}:
+    get:
+      tags: [attempts]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AttemptId"
+      responses:
+        "200":
+          description: حالة المحاولة (لاستئناف الانقطاع)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attempt" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /attempts/{attemptId}/answers:
+    post:
+      tags: [attempts]
+      summary: حفظ إجابة فورًا (idempotent لكل questionId)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AttemptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questionId, answer]
+              properties:
+                questionId: { type: string, format: uuid }
+                answer: {}
+                timeSpentMs: { type: integer }
+      responses:
+        "200": { description: تم حفظ الإجابة }
+        "409": { description: المحاولة منتهية بالفعل }
+
+  /attempts/{attemptId}/submit:
+    post:
+      tags: [attempts]
+      summary: إنهاء المحاولة وحساب النتيجة (يتم داخل الخادم فقط)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AttemptId"
+      responses:
+        "200":
+          description: تم الإنهاء
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttemptResult" }
+
+  /attempts/{attemptId}/result:
+    get:
+      tags: [attempts]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AttemptId"
+      responses:
+        "200":
+          description: نتيجة المحاولة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttemptResult" }
+
+  /progress:
+    get:
+      tags: [progress]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: التقدم العام }
+
+  /progress/subjects/{subjectId}:
+    get:
+      tags: [progress]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SubjectId"
+      responses:
+        "200": { description: تقدم المادة }
+
+  /progress/skills:
+    get:
+      tags: [progress]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: تقدم كل المهارات }
+
+  /progress/skills/{skillId}:
+    get:
+      tags: [progress]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: تقدم مهارة محددة مع تفسير التصنيف }
+
+  /mistakes:
+    get:
+      tags: [mistakes]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: دفتر الأخطاء الكامل }
+
+  /mistakes/due:
+    get:
+      tags: [mistakes]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: الأخطاء المستحقة للمراجعة اليوم }
+
+  /mistakes/{mistakeId}/review:
+    post:
+      tags: [mistakes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: mistakeId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: تم تسجيل نتيجة المراجعة وإعادة الجدولة }
+
+  /daily-plan:
+    get:
+      tags: [daily-plan]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: خطة اليوم الحالية }
+
+  /daily-plan/generate:
+    post:
+      tags: [daily-plan]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: تم توليد خطة جديدة }
+
+  /daily-tasks/{taskId}/start:
+    post:
+      tags: [daily-plan]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: تم بدء المهمة }
+
+  /daily-tasks/{taskId}/complete:
+    post:
+      tags: [daily-plan]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: تم إكمال المهمة }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    GradeId:
+      name: gradeId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SubjectId:
+      name: subjectId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    ValidationError:
+      description: خطأ تحقق من المدخلات
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: غير مصرح
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: ممنوع (لا يملك صلاحية الوصول لهذا المورد)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: تعارض (مثل بريد مستخدم مسبقًا)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        role: { type: string, enum: [student, parent, content_editor, content_reviewer, support, admin, super_admin] }
+        onboardingCompleted: { type: boolean }
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+
+    Attempt:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [diagnostic, lesson, unit, review, daily] }
+        status: { type: string, enum: [in_progress, submitted] }
+        startedAt: { type: string, format: date-time }
+        questions:
+          type: array
+          items: { type: object }
+
+    AttemptResult:
+      type: object
+      properties:
+        attemptId: { type: string, format: uuid }
+        score: { type: number }
+        correctCount: { type: integer }
+        totalCount: { type: integer }
+        skillUpdates:
+          type: array
+          items:
+            type: object
+            properties:
+              skillId: { type: string, format: uuid }
+              newState:
+                type: string
+                enum: [not_started, introduced, practicing, developing, mastered, needs_review]
+        newMistakes:
+          type: array
+          items: { type: object }
