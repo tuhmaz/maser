@@ -1,15 +1,27 @@
 import type {
+  AdminLesson,
+  AdminQuiz,
+  AdminSkill,
+  AdminUnit,
+  AdminUser,
   AnswerPayload,
   ApiErrorBody,
   AttemptResult,
   AttemptView,
+  AuditLogEntry,
   AuthResponse,
+  ContentIssue,
   DailyPlan,
   Grade,
   Lesson,
   LessonQuizRef,
   MistakeItem,
   ProgressOverview,
+  QuestionDetail,
+  QuestionSummary,
+  ReportsOverview,
+  Role,
+  SaveQuestionInput,
   StartTaskResult,
   Subject,
   SkillProgress,
@@ -286,5 +298,118 @@ export class ApiClient {
 
   completeDailyTask(taskId: string) {
     return this.request<{ completed: true }>(`/daily-tasks/${taskId}/complete`, { method: "POST" });
+  }
+
+  // --- لوحة الإدارة: الوحدات ---
+
+  adminListUnits(subjectId?: string) {
+    const qs = subjectId ? `?subjectId=${subjectId}` : "";
+    return this.request<AdminUnit[]>(`/admin/units${qs}`);
+  }
+  adminCreateUnit(input: { subjectId: string; name: string; order?: number }) {
+    return this.request<{ id: string }>("/admin/units", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminUpdateUnit(id: string, input: Partial<{ name: string; order: number; isActive: boolean }>) {
+    return this.request<{ updated: true }>(`/admin/units/${id}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  // --- لوحة الإدارة: الدروس ---
+
+  adminListLessons(unitId?: string) {
+    const qs = unitId ? `?unitId=${unitId}` : "";
+    return this.request<AdminLesson[]>(`/admin/lessons${qs}`);
+  }
+  adminCreateLesson(input: { unitId: string; name: string; summary?: string; order?: number }) {
+    return this.request<{ id: string }>("/admin/lessons", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminUpdateLesson(id: string, input: Partial<{ name: string; summary: string; order: number; isActive: boolean }>) {
+    return this.request<{ updated: true }>(`/admin/lessons/${id}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  // --- لوحة الإدارة: المهارات ---
+
+  adminListSkills() {
+    return this.request<AdminSkill[]>("/admin/skills");
+  }
+  adminCreateSkill(input: { name: string; description?: string; difficulty?: string; lessonId?: string }) {
+    return this.request<{ id: string }>("/admin/skills", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminUpdateSkill(id: string, input: Partial<{ name: string; description: string; difficulty: string; lessonId: string }>) {
+    return this.request<{ updated: true }>(`/admin/skills/${id}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  adminListQuizzes() {
+    return this.request<AdminQuiz[]>("/admin/quizzes");
+  }
+
+  // --- لوحة الإدارة: الأسئلة (docs/question-model.md) ---
+
+  adminListQuestions(filters?: { status?: string; lessonId?: string; q?: string }) {
+    const entries = Object.entries(filters ?? {}).filter(([, v]) => v);
+    const params = new URLSearchParams(entries as [string, string][]).toString();
+    return this.request<QuestionSummary[]>(`/admin/questions${params ? `?${params}` : ""}`);
+  }
+  adminGetQuestion(id: string) {
+    return this.request<QuestionDetail>(`/admin/questions/${id}`);
+  }
+  adminCreateQuestion(input: SaveQuestionInput) {
+    return this.request<{ id: string }>("/admin/questions", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminUpdateQuestion(id: string, input: SaveQuestionInput) {
+    return this.request<{ updated: true; newVersionCreated: boolean }>(`/admin/questions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+  adminDeleteQuestion(id: string) {
+    return this.request<void>(`/admin/questions/${id}`, { method: "DELETE" });
+  }
+  adminSubmitForReview(id: string) {
+    return this.request<{ status: string }>(`/admin/questions/${id}/submit-review`, { method: "POST" });
+  }
+  adminReviewQuestion(id: string, decision: "approved" | "changes_requested", comment?: string) {
+    return this.request<{ status: string }>(`/admin/questions/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify({ decision, comment }),
+    });
+  }
+  adminPublishQuestion(id: string) {
+    return this.request<{ status: string; quizId: string }>(`/admin/questions/${id}/publish`, { method: "POST" });
+  }
+  adminArchiveQuestion(id: string) {
+    return this.request<{ status: string }>(`/admin/questions/${id}/archive`, { method: "POST" });
+  }
+
+  /** المراجعات = أسئلة بحالة in_review (لا كيان منفصل). */
+  adminListReviews() {
+    return this.request<QuestionSummary[]>("/admin/reviews");
+  }
+
+  // --- لوحة الإدارة: المستخدمون ---
+
+  adminListUsers(role?: Role) {
+    const qs = role ? `?role=${role}` : "";
+    return this.request<AdminUser[]>(`/admin/users${qs}`);
+  }
+  adminChangeUserRole(userId: string, role: Role) {
+    return this.request<{ role: string }>(`/admin/users/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  // --- لوحة الإدارة: التقارير وسجل التدقيق وبلاغات المحتوى ---
+
+  adminReportsOverview() {
+    return this.request<ReportsOverview>("/admin/reports/overview");
+  }
+  adminListContentIssues() {
+    return this.request<ContentIssue[]>("/admin/reports/content-issues");
+  }
+  adminResolveContentIssue(id: string) {
+    return this.request<{ status: string }>(`/admin/reports/content-issues/${id}/resolve`, { method: "POST" });
+  }
+  adminListAuditLogs() {
+    return this.request<AuditLogEntry[]>("/admin/reports/audit-logs");
   }
 }

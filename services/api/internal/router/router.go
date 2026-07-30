@@ -32,6 +32,10 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	progressHandler := handlers.NewProgressHandler(db)
 	mistakesHandler := handlers.NewMistakesHandler(db, learningRepo)
 	dailyPlanHandler := handlers.NewDailyPlanHandler(dailyPlanService)
+	adminCurriculumHandler := handlers.NewAdminCurriculumHandler(db)
+	adminQuestionsHandler := handlers.NewAdminQuestionsHandler(db)
+	adminUsersHandler := handlers.NewAdminUsersHandler(db)
+	adminReportsHandler := handlers.NewAdminReportsHandler(db)
 
 	requireAuth := middleware.RequireAuth(cfg.JWTAccessSecret)
 	requireAdmin := middleware.RequireRole("admin", "super_admin")
@@ -94,13 +98,47 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 
 	// --- الإدارة (تتطلب دور admin أو super_admin) ---
 	admin := app.Group("/admin", requireAuth, requireAdmin)
+
+	// إضافة صفوف/مواد جديدة مؤجَّلة لمرحلة التوسع (docs/product-requirements.md).
+	// النطاق التجريبي الحالي (الصف السابع/الرياضيات) مثبَّت ولا يُنشأ له نظير آخر بعد.
 	admin.All("/curricula/*", handlers.NotImplemented)
 	admin.All("/subjects/*", handlers.NotImplemented)
-	admin.All("/lessons/*", handlers.NotImplemented)
-	admin.All("/skills/*", handlers.NotImplemented)
-	admin.All("/questions/*", handlers.NotImplemented)
-	admin.All("/quizzes/*", handlers.NotImplemented)
-	admin.All("/reviews/*", handlers.NotImplemented)
-	admin.All("/users/*", handlers.NotImplemented)
-	admin.All("/reports/*", handlers.NotImplemented)
+
+	admin.Get("/units", adminCurriculumHandler.ListUnits)
+	admin.Post("/units", adminCurriculumHandler.CreateUnit)
+	admin.Put("/units/:id", adminCurriculumHandler.UpdateUnit)
+
+	admin.Get("/lessons", adminCurriculumHandler.ListLessons)
+	admin.Post("/lessons", adminCurriculumHandler.CreateLesson)
+	admin.Put("/lessons/:id", adminCurriculumHandler.UpdateLesson)
+
+	admin.Get("/skills", adminCurriculumHandler.ListSkills)
+	admin.Post("/skills", adminCurriculumHandler.CreateSkill)
+	admin.Put("/skills/:id", adminCurriculumHandler.UpdateSkill)
+
+	admin.Get("/quizzes", adminCurriculumHandler.ListQuizzes) // للقراءة فقط: تُنشأ تلقائيًا عند النشر
+
+	admin.Get("/questions", adminQuestionsHandler.List)
+	admin.Post("/questions", adminQuestionsHandler.Create)
+	admin.Get("/questions/:id", adminQuestionsHandler.Get)
+	admin.Put("/questions/:id", adminQuestionsHandler.Update)
+	admin.Delete("/questions/:id", adminQuestionsHandler.Delete)
+	admin.Post("/questions/:id/submit-review", adminQuestionsHandler.SubmitForReview)
+	admin.Post("/questions/:id/review", adminQuestionsHandler.Review)
+	admin.Post("/questions/:id/publish", adminQuestionsHandler.Publish)
+	admin.Post("/questions/:id/archive", adminQuestionsHandler.Archive)
+
+	// "المراجعات" ليست كيانًا منفصلاً — هي أسئلة بحالة in_review، تُدار بنفس مسارات /admin/questions
+	admin.Get("/reviews", func(c *fiber.Ctx) error {
+		c.Request().URI().QueryArgs().Set("status", "in_review")
+		return adminQuestionsHandler.List(c)
+	})
+
+	admin.Get("/users", adminUsersHandler.List)
+	admin.Put("/users/:id/role", adminUsersHandler.ChangeRole)
+
+	admin.Get("/reports/overview", adminReportsHandler.Overview)
+	admin.Get("/reports/content-issues", adminReportsHandler.ListContentIssues)
+	admin.Post("/reports/content-issues/:id/resolve", adminReportsHandler.ResolveContentIssue)
+	admin.Get("/reports/audit-logs", adminReportsHandler.ListAuditLogs)
 }

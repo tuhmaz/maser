@@ -45,8 +45,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main dir="ltr" className="flex min-h-screen items-center justify-center px-5 py-10">
-      <section dir="rtl" className="surface w-full max-w-[calc(100vw-2.5rem)] p-6 sm:max-w-2xl sm:p-8">
+    <main dir="ltr" className="flex min-h-screen items-center justify-center py-10">
+      <section dir="rtl" className="surface mx-5 w-[calc(100vw-2.5rem)] max-w-2xl p-6 sm:p-8">
         <p className="eyebrow">الخطوة الأولى</p>
         <h1 className="mt-2 text-3xl font-black text-slate-950">تهيئة حسابك</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">

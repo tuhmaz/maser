@@ -37,8 +37,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main dir="ltr" className="flex min-h-screen items-center justify-center px-5 py-10">
-      <section dir="rtl" className="surface w-full max-w-[calc(100vw-2.5rem)] p-6 sm:max-w-md sm:p-8">
+    <main dir="ltr" className="flex min-h-screen items-center justify-center py-10">
+      <section dir="rtl" className="surface mx-5 w-[calc(100vw-2.5rem)] max-w-md p-6 sm:p-8">
         <Link href="/" className="eyebrow">
           Alemedu
         </Link>

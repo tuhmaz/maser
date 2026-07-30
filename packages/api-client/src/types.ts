@@ -53,6 +53,137 @@ export interface ApiErrorBody {
   error: { code: string; message: string };
 }
 
+// --- لوحة الإدارة (docs/user-journeys.md، docs/question-model.md) ---
+
+export interface AdminUnit {
+  id: string;
+  subjectId: string;
+  name: string;
+  order: number;
+  isActive: boolean;
+}
+
+export interface AdminLesson {
+  id: string;
+  unitId: string;
+  name: string;
+  summary?: string;
+  order: number;
+  isActive: boolean;
+}
+
+export interface AdminSkill {
+  id: string;
+  name: string;
+  description?: string;
+  difficulty: "easy" | "medium" | "hard";
+  lessonIds: string[];
+}
+
+export interface AdminQuiz {
+  id: string;
+  lessonId: string;
+  lessonName: string;
+  title: string;
+  questionCount: number;
+}
+
+export type QuestionStatus = "draft" | "in_review" | "changes_requested" | "approved" | "published" | "archived";
+
+export interface QuestionSummary {
+  id: string;
+  lessonId: string;
+  lessonName: string;
+  type: QuestionType;
+  difficulty: "easy" | "medium" | "hard";
+  status: QuestionStatus;
+  body: string;
+  usageCount: number;
+  errorRate: number | null;
+  openReports: number;
+}
+
+export interface AdminQuestionOption {
+  id?: string;
+  text: string;
+  order: number;
+  isCorrect: boolean;
+  wrongReason?: string;
+}
+
+export interface QuestionDetail {
+  id: string;
+  gradeId: string;
+  subjectId: string;
+  unitId: string;
+  lessonId: string;
+  type: QuestionType;
+  difficulty: "easy" | "medium" | "hard";
+  expectedTimeSec: number;
+  status: QuestionStatus;
+  versionNumber: number;
+  body: string;
+  explanation?: string;
+  options?: AdminQuestionOption[];
+  numericAnswer?: string;
+  tolerance?: number;
+  skillIds: string[];
+}
+
+export interface SaveQuestionInput {
+  gradeId?: string;
+  subjectId?: string;
+  unitId?: string;
+  lessonId?: string;
+  type: QuestionType;
+  difficulty?: "easy" | "medium" | "hard";
+  expectedTimeSec?: number;
+  body: string;
+  explanation?: string;
+  options?: AdminQuestionOption[];
+  numericAnswer?: string;
+  tolerance?: number;
+  skillIds: string[];
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  isActive: boolean;
+  gradeName?: string;
+  currentStreak?: number;
+  createdAt: string;
+}
+
+export interface ReportsOverview {
+  totalStudents: number;
+  questionsByStatus: Record<string, number>;
+  openContentReports: number;
+  highErrorQuestions: number;
+  staleIncompleteAttempts: number;
+  averageScore: number | null;
+}
+
+export interface ContentIssue {
+  id: string;
+  questionId: string;
+  questionBody: string;
+  reason: string;
+  status: "open" | "resolved" | "dismissed";
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorEmail?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  createdAt: string;
+}
+
 // --- المنهاج (تكملة) ---
 
 export interface LessonQuizRef {
