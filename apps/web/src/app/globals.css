@@ -3,12 +3,72 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f8f4;
+  --foreground: #10201d;
+  --surface: #ffffff;
+  --muted: #64716e;
+  --border: #dfe7e3;
+  --teal: #0f766e;
+  --amber: #f3b33d;
+  --coral: #e76f51;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+html {
+  width: 100%;
+  overflow-x: hidden;
+  direction: ltr;
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.16);
+}
+
+@layer base {
+  input,
+  select,
+  textarea {
+    @apply rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100;
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full max-w-6xl px-5 py-8 sm:px-6 lg:px-8;
+    min-width: 0;
+    max-width: min(72rem, 100%);
+  }
+
+  .surface {
+    @apply rounded-md border border-slate-200 bg-white shadow-sm shadow-slate-200/50;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .eyebrow {
+    @apply text-sm font-semibold text-teal-700;
+  }
+
+  .muted {
+    @apply text-slate-600;
+  }
+
+  .empty-state {
+    @apply rounded-md border border-dashed border-slate-300 bg-white/70 p-6 text-center text-sm leading-7 text-slate-500;
+  }
+
+  .metric-card {
+    @apply rounded-md border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50;
+  }
 }

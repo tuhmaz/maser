@@ -1,9 +1,18 @@
 import type {
+  AnswerPayload,
   ApiErrorBody,
+  AttemptResult,
+  AttemptView,
   AuthResponse,
+  DailyPlan,
   Grade,
   Lesson,
+  LessonQuizRef,
+  MistakeItem,
+  ProgressOverview,
+  StartTaskResult,
   Subject,
+  SkillProgress,
   Unit,
   User,
 } from "./types";
@@ -192,5 +201,90 @@ export class ApiClient {
 
   getLesson(lessonId: string) {
     return this.request<Lesson>(`/lessons/${lessonId}`);
+  }
+
+  /** يعيد 404 كـ ApiError إن لم يوجد اختبار للدرس بعد — استعمل try/catch. */
+  getLessonQuiz(lessonId: string) {
+    return this.request<LessonQuizRef>(`/lessons/${lessonId}/quiz`);
+  }
+
+  // --- محرك الاختبارات ---
+
+  startDiagnostic() {
+    return this.request<AttemptView>("/diagnostic/start", { method: "POST" });
+  }
+
+  startQuiz(quizId: string) {
+    return this.request<AttemptView>(`/quizzes/${quizId}/start`, { method: "POST" });
+  }
+
+  /** لاستئناف محاولة بعد انقطاع الاتصال — نفس شكل بدء المحاولة. */
+  getAttempt(attemptId: string) {
+    return this.request<AttemptView>(`/attempts/${attemptId}`);
+  }
+
+  saveAnswer(attemptId: string, input: { questionId: string; answer: AnswerPayload; timeSpentMs?: number }) {
+    return this.request<{ saved: true }>(`/attempts/${attemptId}/answers`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  submitAttempt(attemptId: string) {
+    return this.request<AttemptResult>(`/attempts/${attemptId}/submit`, { method: "POST" });
+  }
+
+  getAttemptResult(attemptId: string) {
+    return this.request<AttemptResult>(`/attempts/${attemptId}/result`);
+  }
+
+  // --- التقدم ---
+
+  progressOverview() {
+    return this.request<ProgressOverview>("/progress");
+  }
+
+  progressSkills() {
+    return this.request<SkillProgress[]>("/progress/skills");
+  }
+
+  progressSkill(skillId: string) {
+    return this.request<SkillProgress & { incorrectCount: number }>(`/progress/skills/${skillId}`);
+  }
+
+  // --- دفتر الأخطاء ---
+
+  listMistakes() {
+    return this.request<MistakeItem[]>("/mistakes");
+  }
+
+  dueMistakes() {
+    return this.request<MistakeItem[]>("/mistakes/due");
+  }
+
+  reviewMistake(mistakeId: string, correct: boolean) {
+    return this.request<{ newState: string }>(`/mistakes/${mistakeId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ correct }),
+    });
+  }
+
+  // --- المهمة اليومية ---
+
+  /** خطة اليوم إن وُجدت، أو { plan: null } إن لم تُولَّد بعد. */
+  getTodayPlan() {
+    return this.request<{ plan: DailyPlan | null }>("/daily-plan");
+  }
+
+  generateTodayPlan() {
+    return this.request<DailyPlan>("/daily-plan/generate", { method: "POST" });
+  }
+
+  startDailyTask(taskId: string) {
+    return this.request<StartTaskResult>(`/daily-tasks/${taskId}/start`, { method: "POST" });
+  }
+
+  completeDailyTask(taskId: string) {
+    return this.request<{ completed: true }>(`/daily-tasks/${taskId}/complete`, { method: "POST" });
   }
 }

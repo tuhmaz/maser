@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function AdminRootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="ltr">
       <body className="min-h-screen antialiased">
         <AdminShell>{children}</AdminShell>
       </body>

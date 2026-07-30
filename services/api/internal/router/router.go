@@ -23,6 +23,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 
 	authService := service.NewAuthService(cfg, userRepo, sessionRepo)
 	quizService := service.NewQuizService(db, questionRepo, attemptRepo, learningRepo)
+	dailyPlanService := service.NewDailyPlanService(db, quizService)
 
 	authHandler := handlers.NewAuthHandler(authService)
 	curriculumHandler := handlers.NewCurriculumHandler(db)
@@ -30,6 +31,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	quizHandler := handlers.NewQuizHandler(quizService)
 	progressHandler := handlers.NewProgressHandler(db)
 	mistakesHandler := handlers.NewMistakesHandler(db, learningRepo)
+	dailyPlanHandler := handlers.NewDailyPlanHandler(dailyPlanService)
 
 	requireAuth := middleware.RequireAuth(cfg.JWTAccessSecret)
 	requireAdmin := middleware.RequireRole("admin", "super_admin")
@@ -61,6 +63,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	app.Get("/subjects/:subjectId/units", curriculumHandler.ListUnits)
 	app.Get("/units/:unitId/lessons", curriculumHandler.ListLessons)
 	app.Get("/lessons/:lessonId", curriculumHandler.GetLesson)
+	app.Get("/lessons/:lessonId/quiz", curriculumHandler.GetLessonQuiz)
 
 	// --- الاختبارات (محرك الاختبارات) ---
 	app.Post("/diagnostic/start", requireAuth, quizHandler.StartDiagnostic)
@@ -84,10 +87,10 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	mistakes.Post("/:mistakeId/review", mistakesHandler.Review)
 
 	// --- المهمة اليومية ---
-	app.Get("/daily-plan", requireAuth, handlers.NotImplemented)
-	app.Post("/daily-plan/generate", requireAuth, handlers.NotImplemented)
-	app.Post("/daily-tasks/:taskId/start", requireAuth, handlers.NotImplemented)
-	app.Post("/daily-tasks/:taskId/complete", requireAuth, handlers.NotImplemented)
+	app.Get("/daily-plan", requireAuth, dailyPlanHandler.GetToday)
+	app.Post("/daily-plan/generate", requireAuth, dailyPlanHandler.Generate)
+	app.Post("/daily-tasks/:taskId/start", requireAuth, dailyPlanHandler.StartTask)
+	app.Post("/daily-tasks/:taskId/complete", requireAuth, dailyPlanHandler.CompleteTask)
 
 	// --- الإدارة (تتطلب دور admin أو super_admin) ---
 	admin := app.Group("/admin", requireAuth, requireAdmin)

@@ -42,18 +42,21 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 px-6">
-      <h1 className="text-2xl font-bold">تسجيل دخول الإدارة</h1>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+    <main dir="ltr" className="flex min-h-screen items-center justify-center bg-slate-950 px-5 py-10">
+      <section dir="rtl" className="w-full max-w-[calc(100vw-2.5rem)] rounded-md border border-white/10 bg-white p-6 shadow-2xl shadow-black/30 sm:max-w-md sm:p-8">
+        <p className="admin-eyebrow">Alemedu Admin</p>
+        <h1 className="mt-3 text-3xl font-black text-slate-950">تسجيل دخول الإدارة</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          مخصص لفريق المحتوى والمراجعة والتشغيل.
+        </p>
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
         <input
-          className="rounded-lg border px-3 py-2"
           type="email"
           placeholder="البريد الإلكتروني"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="كلمة المرور"
           value={password}
@@ -64,6 +67,7 @@ export default function AdminLoginPage() {
           {loading ? "جارٍ الدخول..." : "دخول"}
         </Button>
       </form>
+      </section>
     </main>
   );
 }

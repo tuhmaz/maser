@@ -56,3 +56,6 @@ coverage/
 # Misc
 .turbo/
 .cache/
+
+# Local browser automation profiles
+tmp/

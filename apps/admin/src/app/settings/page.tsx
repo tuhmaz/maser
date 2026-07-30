@@ -12,22 +12,28 @@ const FLAGS = [
 
 export default function AdminSettingsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="space-y-6">
+      <header>
+        <p className="admin-eyebrow">الإعدادات</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">التحكم والصلاحيات</h1>
+        <p className="mt-2 max-w-3xl leading-7 text-slate-600">
+          إعدادات تشغيلية لا تغيّر نطاق النسخة التجريبية إلا عبر قرار موثق.
+        </p>
+      </header>
 
       <ChangePasswordForm />
 
-      <section className="rounded-lg border bg-white p-4">
-        <h2 className="mb-3 text-lg font-semibold">Feature Flags</h2>
-        <ul className="flex flex-col gap-3">
+      <section className="admin-surface p-5">
+        <h2 className="text-lg font-black text-slate-950">Feature Flags</h2>
+        <ul className="mt-4 divide-y divide-slate-100">
           {FLAGS.map((f) => (
-            <li key={f.key} className="flex items-center justify-between border-b pb-2 last:border-0">
-              <span>{f.label}</span>
-              <code className="text-xs text-gray-400">{f.key}</code>
+            <li key={f.key} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="font-semibold text-slate-800">{f.label}</span>
+              <code className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">{f.key}</code>
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-sm text-gray-500">
+        <p className="mt-3 text-sm leading-7 text-slate-500">
           القيم الحية مبذورة في services/api/migrations/0007_admin_audit.up.sql.
           التبديل الفعلي يُبنى عبر مسار إدارة مخصص لاحقًا.
         </p>

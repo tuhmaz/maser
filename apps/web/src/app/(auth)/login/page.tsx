@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loginSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
@@ -36,19 +37,24 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 px-6">
-      <h1 className="text-2xl font-bold">تسجيل الدخول</h1>
+    <main dir="ltr" className="flex min-h-screen items-center justify-center px-5 py-10">
+      <section dir="rtl" className="surface w-full max-w-[calc(100vw-2.5rem)] p-6 sm:max-w-md sm:p-8">
+        <Link href="/" className="eyebrow">
+          Alemedu
+        </Link>
+        <h1 className="mt-4 text-3xl font-black text-slate-950">تسجيل الدخول</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          ارجع إلى مهمتك اليومية وتابع المهارات التي تحتاج مراجعة.
+        </p>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
         <input
-          className="rounded-lg border px-3 py-2"
           type="email"
           placeholder="البريد الإلكتروني"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="كلمة المرور"
           value={password}
@@ -61,6 +67,13 @@ export default function LoginPage() {
           {loading ? "جارٍ الدخول..." : "تسجيل الدخول"}
         </Button>
       </form>
+        <p className="mt-5 text-sm text-slate-600">
+          ليس لديك حساب؟{" "}
+          <Link href="/register" className="font-semibold text-teal-700 hover:underline">
+            ابدأ مجانًا
+          </Link>
+        </p>
+      </section>
     </main>
   );
 }

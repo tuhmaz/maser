@@ -6,19 +6,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// GenerateDailyPlans مسؤول عن توليد خطة اليوم لكل طالب نشط لم تُولَّد خطته بعد.
-// المنطق الكامل لتوليد المحتوى (اختيار المراجعة/الشرح/الأسئلة الجديدة) يُبنى
-// في مرحلة "بناء المهمة اليومية" من ترتيب التنفيذ — راجع docs/daily-plan-rules.md.
-// هذا الملف حاليًا هيكل فقط (no-op آمن) حتى يُستكمَل المنطق.
+// GenerateDailyPlans (احتياطي/مستقبلي).
+//
+// التوليد الفعلي للخطة اليومية أصبح عند الطلب (on-demand) عبر
+// POST /daily-plan/generate في services/api/internal/service/daily_plan_service.go
+// — يُستدعى تلقائيًا عندما يفتح الطالب صفحة /today ولا توجد خطة لليوم بعد،
+// وهو عديم التأثير الجانبي المكرر (خطة واحدة لكل طالب في اليوم).
+//
+// هذه المهمة الخلفية محجوزة لتوليد استباقي جماعي (قبل بدء يوم الطالب، دفعة
+// واحدة لكل الطلاب النشطين) إن استدعت الحاجة لاحقًا تحسين زمن استجابة أول
+// فتح لصفحة /today. تعمّد عدم تكرار منطق البناء هنا داخل وحدة Go منفصلة
+// (services/worker مستقل عن services/api) تجنبًا لتضارب خوارزميتين مختلفتين
+// لنفس القرار المنتجي.
 type GenerateDailyPlans struct{}
 
 func (GenerateDailyPlans) Name() string { return "generate_daily_plans" }
 
 func (GenerateDailyPlans) Run(ctx context.Context, db *pgxpool.Pool) error {
-	// TODO: تنفيذ منطق التوليد الكامل حسب docs/daily-plan-rules.md:
-	// لكل طالب نشط بلا daily_plans لهذا اليوم:
-	//   1) اجلب المهارات الضعيفة والأخطاء المستحقة (review_schedules.due_at <= now())
-	//   2) ابنِ daily_plan + daily_tasks (مراجعة قصيرة، شرح، أسئلة جديدة، سؤال من دفتر الأخطاء، اختبار تثبيت)
-	//   3) لا تتجاوز قدرة الطالب ولا تعتمد على أسئلة عشوائية فقط
 	return nil
 }

@@ -6,9 +6,17 @@ export function SectionPlaceholder({
   description: string;
 }) {
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold">{title}</h1>
-      <div className="rounded-lg border border-dashed p-6 text-gray-500">{description}</div>
+    <div className="space-y-5">
+      <header>
+        <p className="admin-eyebrow">Alemedu Admin</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">{title}</h1>
+      </header>
+      <div className="admin-empty">
+        <p>{description}</p>
+        <p className="mt-3 text-xs font-semibold text-slate-400">
+          سيُربط هذا القسم بنقاط الإدارة المخصصة عند اكتمال عقد الـ API.
+        </p>
+      </div>
     </div>
   );
 }

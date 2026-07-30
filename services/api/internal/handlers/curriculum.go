@@ -149,3 +149,25 @@ func (h *CurriculumHandler) GetLesson(c *fiber.Ctx) error {
 	}
 	return c.JSON(l)
 }
+
+type quizRefDTO struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Title string `json:"title"`
+}
+
+// GetLessonQuiz يعيد اختبار الدرس (إن وُجد) — يسمح لزر "اختبر نفسك الآن"
+// في صفحة الدرس بمعرفة أي quizId يبدأ عبر POST /quizzes/{quizId}/start.
+func (h *CurriculumHandler) GetLessonQuiz(c *fiber.Ctx) error {
+	lessonID := c.Params("lessonId")
+	var q quizRefDTO
+	err := h.db.QueryRow(c.Context(), `
+		SELECT id, quiz_type, title FROM quizzes
+		WHERE lesson_id = $1 AND is_active = true
+		ORDER BY created_at LIMIT 1
+	`, lessonID).Scan(&q.ID, &q.Type, &q.Title)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "لا يوجد اختبار لهذا الدرس بعد")
+	}
+	return c.JSON(q)
+}

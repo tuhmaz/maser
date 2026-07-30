@@ -13,25 +13,30 @@ export default function GradesPage() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold">Grades</h1>
-      <table className="w-full text-right text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2">الاسم</th>
-            <th className="py-2">المستوى</th>
-          </tr>
-        </thead>
-        <tbody>
-          {grades.map((g) => (
-            <tr key={g.id} className="border-b">
-              <td className="py-2">{g.name}</td>
-              <td className="py-2">{g.level}</td>
+    <div className="space-y-5">
+      <header>
+        <p className="admin-eyebrow">المنهاج</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">الصفوف</h1>
+      </header>
+      <div className="admin-surface overflow-hidden">
+        <table className="w-full text-right text-sm">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 font-bold">الاسم</th>
+              <th className="px-4 py-3 font-bold">المستوى</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {grades.length === 0 && <p className="text-gray-500">لا توجد صفوف بعد.</p>}
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {grades.map((g) => (
+              <tr key={g.id}>
+                <td className="px-4 py-3 font-semibold text-slate-950">{g.name}</td>
+                <td className="px-4 py-3 text-slate-600">{g.level}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {grades.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد صفوف بعد.</p>}
+      </div>
     </div>
   );
 }

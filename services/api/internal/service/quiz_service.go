@@ -76,6 +76,26 @@ func (s *QuizService) StartQuiz(ctx context.Context, userID, quizID string) (*At
 	return s.createAttempt(ctx, userID, &quiz.ID, quiz.Type, questions)
 }
 
+// StartAdHocAttempt يبدأ محاولة على مجموعة أسئلة مختارة مسبقًا دون اختبار مُعرَّف
+// (quiz row) — تستخدمها المهمة اليومية لأسئلتها الجديدة واختبار التثبيت
+// (docs/daily-plan-rules.md). الأسئلة غير المنشورة أو المحذوفة تُتجاهَل بصمت.
+func (s *QuizService) StartAdHocAttempt(ctx context.Context, userID, attemptType string, questionIDs []string) (*AttemptView, error) {
+	byID, err := s.questions.ByIDs(ctx, questionIDs)
+	if err != nil {
+		return nil, err
+	}
+	questions := make([]models.FullQuestion, 0, len(questionIDs))
+	for _, id := range questionIDs {
+		if q, ok := byID[id]; ok {
+			questions = append(questions, q)
+		}
+	}
+	if len(questions) == 0 {
+		return nil, ErrNoQuestions
+	}
+	return s.createAttempt(ctx, userID, nil, attemptType, questions)
+}
+
 func (s *QuizService) createAttempt(ctx context.Context, userID string, quizID *string, attemptType string, questions []models.FullQuestion) (*AttemptView, error) {
 	order := make([]string, len(questions))
 	for i, q := range questions {

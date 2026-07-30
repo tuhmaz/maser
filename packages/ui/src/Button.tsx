@@ -10,15 +10,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<Variant, string> = {
-  primary: "bg-blue-600 text-white hover:bg-blue-700",
-  secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
-  danger: "bg-red-600 text-white hover:bg-red-700",
+  primary: "bg-teal-700 text-white shadow-sm shadow-teal-900/10 hover:bg-teal-800",
+  secondary: "border border-slate-200 bg-white text-slate-900 shadow-sm hover:border-teal-200 hover:bg-teal-50",
+  danger: "bg-rose-600 text-white shadow-sm shadow-rose-900/10 hover:bg-rose-700",
 };
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {
   return (
     <button
-      className={`rounded-lg px-4 py-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variantStyles[variant]} ${className}`}
+      className={`inline-flex min-h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 disabled:cursor-not-allowed disabled:opacity-50 ${variantStyles[variant]} ${className}`}
       {...props}
     />
   );

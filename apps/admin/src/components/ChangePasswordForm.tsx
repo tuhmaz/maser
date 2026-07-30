@@ -49,12 +49,14 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <section className="rounded-lg border bg-white p-4">
-      <h2 className="mb-3 text-lg font-semibold">تغيير كلمة المرور</h2>
+    <section className="admin-surface p-5">
+      <h2 className="text-lg font-black text-slate-950">تغيير كلمة المرور</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        بعد التغيير تُلغى الجلسات القديمة وتبقى هذه الجلسة نشطة بالرموز الجديدة.
+      </p>
 
-      <form onSubmit={handleSubmit} className="flex max-w-sm flex-col gap-3">
+      <form onSubmit={handleSubmit} className="mt-5 flex max-w-md flex-col gap-3">
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="كلمة المرور الحالية"
           value={currentPassword}
@@ -62,7 +64,6 @@ export function ChangePasswordForm() {
           autoComplete="current-password"
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)"
           value={newPassword}
@@ -70,7 +71,6 @@ export function ChangePasswordForm() {
           autoComplete="new-password"
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="تأكيد كلمة المرور الجديدة"
           value={confirmPassword}

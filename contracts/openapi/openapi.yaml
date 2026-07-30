@@ -240,6 +240,19 @@ paths:
       responses:
         "200": { description: تفاصيل الدرس }
 
+  /lessons/{lessonId}/quiz:
+    get:
+      tags: [curriculum]
+      summary: اختبار الدرس المرتبط (لبدء الاختبار عبر /quizzes/{quizId}/start)
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: مرجع الاختبار (id, type, title) }
+        "404": { description: لا يوجد اختبار لهذا الدرس بعد }
+
   /diagnostic/start:
     post:
       tags: [attempts]

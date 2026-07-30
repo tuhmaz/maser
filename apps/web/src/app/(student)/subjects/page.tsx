@@ -18,16 +18,21 @@ export default function StudentSubjectsPage() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold">موادي</h1>
+    <div className="space-y-6">
+      <header>
+        <p className="eyebrow">موادي</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">خريطة التعلم</h1>
+        <p className="mt-2 text-slate-600">النسخة الأولى تبدأ بالرياضيات للصف السابع.</p>
+      </header>
       {subjects.length === 0 ? (
-        <p className="text-gray-500">لا توجد مواد بعد.</p>
+        <p className="empty-state">لا توجد مواد بعد.</p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-3 md:grid-cols-2">
           {subjects.map((s) => (
             <li key={s.id}>
-              <Link href={`/subjects/${s.id}`} className="rounded-lg border block px-4 py-3 hover:border-blue-600">
-                {s.name}
+              <Link href={`/subjects/${s.id}`} className="surface block p-5 transition hover:border-teal-300 hover:bg-teal-50/50">
+                <span className="text-lg font-black text-slate-950">{s.name}</span>
+                <span className="mt-2 block text-sm text-slate-500">افتح الوحدات والدروس والمهارات.</span>
               </Link>
             </li>
           ))}

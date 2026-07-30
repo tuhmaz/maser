@@ -34,7 +34,9 @@ export default function OnboardingPage() {
     setError(null);
     try {
       await api.completeOnboarding({ gradeId, subjectIds: [subjectId] });
-      router.push("/today");
+      // بعد التهيئة مباشرة: الاختبار التشخيصي (خطوة 7 من رحلة الطالب الأولى، docs/user-journeys.md)
+      const view = await api.startDiagnostic();
+      router.push(`/quizzes/${view.attempt.id}`);
     } catch (err: any) {
       setError(err?.message ?? "تعذّر إكمال التهيئة، حاول مجددًا");
     } finally {
@@ -43,34 +45,45 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 px-6">
-      <h1 className="text-2xl font-bold">تهيئة حسابك</h1>
+    <main dir="ltr" className="flex min-h-screen items-center justify-center px-5 py-10">
+      <section dir="rtl" className="surface w-full max-w-[calc(100vw-2.5rem)] p-6 sm:max-w-2xl sm:p-8">
+        <p className="eyebrow">الخطوة الأولى</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">تهيئة حسابك</h1>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+          اختر الصف والمادة حتى نجهز الاختبار التشخيصي والمهمة اليومية المناسبة لك.
+        </p>
 
-      <section>
-        <h2 className="mb-2 font-medium">اختر صفك</h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="mt-6 grid grid-cols-3 gap-2 text-xs font-semibold text-slate-600">
+          <span className="rounded-md bg-teal-700 px-3 py-2 text-center text-white">الصف</span>
+          <span className="rounded-md bg-teal-50 px-3 py-2 text-center text-teal-800">المادة</span>
+          <span className="rounded-md bg-slate-100 px-3 py-2 text-center">التشخيص</span>
+        </div>
+
+      <section className="mt-7">
+        <h2 className="mb-3 font-bold text-slate-950">اختر صفك</h2>
+        <div className="grid gap-2 sm:grid-cols-2">
           {grades.map((g) => (
             <button
               key={g.id}
               onClick={() => setGradeId(g.id)}
-              className={`rounded-lg border px-4 py-2 ${gradeId === g.id ? "border-blue-600 bg-blue-50" : ""}`}
+              className={`rounded-md border px-4 py-3 text-right text-sm font-semibold transition ${gradeId === g.id ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-200 bg-white hover:border-teal-300"}`}
             >
               {g.name}
             </button>
           ))}
-          {grades.length === 0 && <p className="text-sm text-gray-500">لا توجد صفوف متاحة بعد.</p>}
+          {grades.length === 0 && <p className="empty-state sm:col-span-2">لا توجد صفوف متاحة بعد.</p>}
         </div>
       </section>
 
       {gradeId && (
-        <section>
-          <h2 className="mb-2 font-medium">اختر مادتك</h2>
-          <div className="flex flex-wrap gap-2">
+        <section className="mt-7">
+          <h2 className="mb-3 font-bold text-slate-950">اختر مادتك</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
             {subjects.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSubjectId(s.id)}
-                className={`rounded-lg border px-4 py-2 ${subjectId === s.id ? "border-blue-600 bg-blue-50" : ""}`}
+                className={`rounded-md border px-4 py-3 text-right text-sm font-semibold transition ${subjectId === s.id ? "border-amber-500 bg-amber-50 text-slate-950" : "border-slate-200 bg-white hover:border-amber-300"}`}
               >
                 {s.name}
               </button>
@@ -81,9 +94,10 @@ export default function OnboardingPage() {
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <Button onClick={handleContinue} disabled={loading}>
+      <Button onClick={handleContinue} disabled={loading} className="mt-7 w-full">
         {loading ? "جارٍ المتابعة..." : "متابعة إلى الاختبار التشخيصي"}
       </Button>
+      </section>
     </main>
   );
 }

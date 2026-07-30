@@ -28,20 +28,28 @@ export default function SubjectMapPage() {
   }, [units]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold">خريطة المادة</h1>
-      {units.length === 0 && <p className="text-gray-500">لا توجد وحدات بعد.</p>}
+    <div className="space-y-6">
+      <header>
+        <p className="eyebrow">خريطة المادة</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950">الوحدات والدروس</h1>
+      </header>
+      {units.length === 0 && <p className="empty-state">لا توجد وحدات بعد.</p>}
       {units.map((unit) => (
-        <section key={unit.id}>
-          <h2 className="mb-2 font-semibold">{unit.name}</h2>
-          <ul className="flex flex-col gap-1">
+        <section key={unit.id} className="surface p-5">
+          <h2 className="text-xl font-black text-slate-950">{unit.name}</h2>
+          <ul className="mt-4 grid gap-2">
             {(lessonsByUnit[unit.id] ?? []).map((lesson) => (
               <li key={lesson.id}>
-                <Link href={`/lessons/${lesson.id}`} className="text-blue-600 hover:underline">
+                <Link href={`/lessons/${lesson.id}`} className="block rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-teal-300 hover:bg-white hover:text-teal-800">
                   {lesson.name}
                 </Link>
               </li>
             ))}
+            {(lessonsByUnit[unit.id] ?? []).length === 0 && (
+              <li className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                لا توجد دروس منشورة لهذه الوحدة بعد.
+              </li>
+            )}
           </ul>
         </section>
       ))}

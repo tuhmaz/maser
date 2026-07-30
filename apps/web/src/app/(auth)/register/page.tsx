@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { registerSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
@@ -38,26 +39,30 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 px-6">
-      <h1 className="text-2xl font-bold">إنشاء حساب</h1>
+    <main dir="ltr" className="flex min-h-screen items-center justify-center px-5 py-10">
+      <section dir="rtl" className="surface w-full max-w-[calc(100vw-2.5rem)] p-6 sm:max-w-md sm:p-8">
+        <Link href="/" className="eyebrow">
+          Alemedu
+        </Link>
+        <h1 className="mt-4 text-3xl font-black text-slate-950">إنشاء حساب</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          دقائق قليلة ثم تبدأ بتحديد مستواك وبناء خطتك اليومية.
+        </p>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
         <input
-          className="rounded-lg border px-3 py-2"
           type="text"
           placeholder="الاسم"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="email"
           placeholder="البريد الإلكتروني"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="rounded-lg border px-3 py-2"
           type="password"
           placeholder="كلمة المرور"
           value={password}
@@ -70,6 +75,13 @@ export default function RegisterPage() {
           {loading ? "جارٍ الإنشاء..." : "إنشاء الحساب"}
         </Button>
       </form>
+        <p className="mt-5 text-sm text-slate-600">
+          لديك حساب؟{" "}
+          <Link href="/login" className="font-semibold text-teal-700 hover:underline">
+            سجّل الدخول
+          </Link>
+        </p>
+      </section>
     </main>
   );
 }
