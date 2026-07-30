@@ -5,7 +5,9 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/alemedu/api/internal/analytics"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
 	"github.com/alemedu/api/internal/service"
@@ -14,10 +16,11 @@ import (
 
 type QuizHandler struct {
 	quiz *service.QuizService
+	db   *pgxpool.Pool // للتحليلات فقط
 }
 
-func NewQuizHandler(quiz *service.QuizService) *QuizHandler {
-	return &QuizHandler{quiz: quiz}
+func NewQuizHandler(quiz *service.QuizService, db *pgxpool.Pool) *QuizHandler {
+	return &QuizHandler{quiz: quiz, db: db}
 }
 
 func (h *QuizHandler) StartDiagnostic(c *fiber.Ctx) error {
@@ -33,6 +36,7 @@ func (h *QuizHandler) StartDiagnostic(c *fiber.Ctx) error {
 		}
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء الاختبار التشخيصي")
 	}
+	analytics.Track(c.Context(), h.db, "diagnostic_started", userID, fiber.Map{"attemptId": view.Attempt.ID}, nil)
 	return c.Status(fiber.StatusCreated).JSON(view)
 }
 
@@ -50,6 +54,7 @@ func (h *QuizHandler) StartQuiz(c *fiber.Ctx) error {
 		}
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء الاختبار")
 	}
+	analytics.Track(c.Context(), h.db, "quiz_started", userID, fiber.Map{"quizId": quizID, "attemptId": view.Attempt.ID}, nil)
 	return c.Status(fiber.StatusCreated).JSON(view)
 }
 
@@ -101,6 +106,7 @@ func (h *QuizHandler) SaveAnswer(c *fiber.Ctx) error {
 		}
 	}
 	// لا تُعاد صحة الإجابة هنا — تظهر فقط في تقرير ما بعد التسليم
+	analytics.Track(c.Context(), h.db, "question_answered", userID, fiber.Map{"attemptId": attemptID, "questionId": req.QuestionID}, nil)
 	return c.JSON(fiber.Map{"saved": true})
 }
 
@@ -115,6 +121,9 @@ func (h *QuizHandler) Submit(c *fiber.Ctx) error {
 		}
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر إنهاء المحاولة")
 	}
+	analytics.Track(c.Context(), h.db, "quiz_completed", userID, fiber.Map{
+		"attemptId": attemptID, "score": result.Score, "correctCount": result.CorrectCount, "totalCount": result.TotalCount,
+	}, nil)
 	return c.JSON(result)
 }
 

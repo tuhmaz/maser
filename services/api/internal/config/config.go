@@ -23,6 +23,17 @@ type Config struct {
 	JWTRefreshTTLDays   int
 
 	CORSAllowedOrigins []string
+
+	SMTPHost string
+	SMTPPort string
+	SMTPUser string
+	SMTPPass string
+	SMTPFrom string
+
+	WebBaseURL string // لبناء روابط استعادة كلمة المرور (docs/api-contract.md)
+
+	StorageDir     string // مجلد رفع الملفات المحلي (docs/database-design.md: Object Storage)
+	PublicAssetURL string // القاعدة العامة لعرض الملفات المرفوعة
 }
 
 // Load يقرأ ملف .env إن وُجد (للتطوير المحلي فقط) ثم يقرأ متغيرات البيئة الفعلية.
@@ -42,6 +53,17 @@ func Load() *Config {
 		JWTRefreshTTLDays:   getEnvInt("JWT_REFRESH_TTL_DAYS", 30),
 
 		CORSAllowedOrigins: strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"), ","),
+
+		SMTPHost: getEnv("SMTP_HOST", ""),
+		SMTPPort: getEnv("SMTP_PORT", "587"),
+		SMTPUser: getEnv("SMTP_USER", ""),
+		SMTPPass: getEnv("SMTP_PASS", ""),
+		SMTPFrom: getEnv("SMTP_FROM", "no-reply@alemedu.com"),
+
+		WebBaseURL: getEnv("WEB_BASE_URL", "http://localhost:3000"),
+
+		StorageDir:     getEnv("STORAGE_DIR", "./storage"),
+		PublicAssetURL: getEnv("PUBLIC_ASSET_URL", "http://localhost:8080/assets"),
 	}
 }
 

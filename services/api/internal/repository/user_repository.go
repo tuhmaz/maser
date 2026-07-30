@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -113,6 +114,48 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID, passwordHas
 		return ErrNotFound
 	}
 	return nil
+}
+
+// CreatePasswordResetToken يخزّن تجزئة رمز الاستعادة (لا الرمز نفسه أبدًا) صالحة لمدة ttl.
+func (r *UserRepository) CreatePasswordResetToken(ctx context.Context, userID, tokenHash string, ttl time.Duration) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)
+	`, userID, tokenHash, ttl.String())
+	return err
+}
+
+// ConsumePasswordResetToken يتحقق من صلاحية الرمز، يحدّث كلمة المرور، ويعلّم
+// الرمز مستخدَمًا — كل ذلك داخل معاملة واحدة تمنع إعادة استخدام نفس الرمز مرتين.
+func (r *UserRepository) ConsumePasswordResetToken(ctx context.Context, tokenHash, newPasswordHash string) (userID string, err error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx, `
+		SELECT user_id FROM password_reset_tokens
+		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+		FOR UPDATE
+	`, tokenHash).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = now() WHERE token_hash = $1`, tokenHash); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1`, userID, newPasswordHash); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE user_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+		return "", err
+	}
+
+	return userID, tx.Commit(ctx)
 }
 
 // GetPrimaryRole يعيد أول دور مرتبط بالمستخدم (student في السياق العادي لواجهة الطالب).

@@ -6,18 +6,21 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/alemedu/api/internal/analytics"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
+	"github.com/alemedu/api/internal/service"
 	"github.com/alemedu/api/internal/utils"
 )
 
 type MistakesHandler struct {
-	db       *pgxpool.Pool
-	learning *repository.LearningRepository
+	db           *pgxpool.Pool
+	learning     *repository.LearningRepository
+	achievements *service.AchievementService
 }
 
-func NewMistakesHandler(db *pgxpool.Pool, learning *repository.LearningRepository) *MistakesHandler {
-	return &MistakesHandler{db: db, learning: learning}
+func NewMistakesHandler(db *pgxpool.Pool, learning *repository.LearningRepository, achievements *service.AchievementService) *MistakesHandler {
+	return &MistakesHandler{db: db, learning: learning, achievements: achievements}
 }
 
 type mistakeItem struct {
@@ -100,6 +103,10 @@ func (h *MistakesHandler) Review(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر تسجيل المراجعة")
 	}
 
-	_ = h.learning.TouchStreak(c.Context(), userID)
+	if streak, err := h.learning.TouchStreak(c.Context(), userID); err == nil {
+		h.achievements.CheckStreak(c.Context(), userID, streak)
+	}
+	_, _ = h.achievements.Award(c.Context(), userID, "first_mistake_reviewed")
+	analytics.Track(c.Context(), h.db, "mistake_reviewed", userID, fiber.Map{"mistakeId": mistakeID, "correct": *req.Correct, "newState": newState}, nil)
 	return c.JSON(fiber.Map{"newState": newState})
 }

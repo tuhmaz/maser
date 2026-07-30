@@ -31,16 +31,16 @@ var validQuestionTypes = map[string]bool{
 var validDifficulties = map[string]bool{"easy": true, "medium": true, "hard": true}
 
 type questionSummaryDTO struct {
-	ID         string  `json:"id"`
-	LessonID   string  `json:"lessonId"`
-	LessonName string  `json:"lessonName"`
-	Type       string  `json:"type"`
-	Difficulty string  `json:"difficulty"`
-	Status     string  `json:"status"`
-	Body       string  `json:"body"`
-	UsageCount int     `json:"usageCount"`
-	ErrorRate  *float64 `json:"errorRate"`
-	OpenReports int    `json:"openReports"`
+	ID          string   `json:"id"`
+	LessonID    string   `json:"lessonId"`
+	LessonName  string   `json:"lessonName"`
+	Type        string   `json:"type"`
+	Difficulty  string   `json:"difficulty"`
+	Status      string   `json:"status"`
+	Body        string   `json:"body"`
+	UsageCount  int      `json:"usageCount"`
+	ErrorRate   *float64 `json:"errorRate"`
+	OpenReports int      `json:"openReports"`
 }
 
 // List يدعم التصفية بالحالة والدرس والبحث النصي، مع أداء الاستخدام ونسبة الخطأ

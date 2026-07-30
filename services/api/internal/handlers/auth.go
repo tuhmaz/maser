@@ -4,7 +4,9 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/alemedu/api/internal/analytics"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
 	"github.com/alemedu/api/internal/service"
@@ -13,10 +15,11 @@ import (
 
 type AuthHandler struct {
 	auth *service.AuthService
+	db   *pgxpool.Pool // للتحليلات فقط (docs/analytics-events.md)
 }
 
-func NewAuthHandler(auth *service.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+func NewAuthHandler(auth *service.AuthService, db *pgxpool.Pool) *AuthHandler {
+	return &AuthHandler{auth: auth, db: db}
 }
 
 type registerRequest struct {
@@ -49,6 +52,11 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "حدث خطأ غير متوقع")
 	}
 
+	analytics.Track(c.Context(), h.db, "register_completed", result.User.ID, nil, &analytics.UTM{
+		Source: c.Query("utm_source"), Medium: c.Query("utm_medium"),
+		Campaign: c.Query("utm_campaign"), Content: c.Query("utm_content"),
+	})
+
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"accessToken":  result.AccessToken,
 		"refreshToken": result.RefreshToken,
@@ -66,6 +74,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusUnauthorized, "invalid_credentials", "البريد الإلكتروني أو كلمة المرور غير صحيحة")
 	}
+	analytics.Track(c.Context(), h.db, "student_returned", result.User.ID, nil, nil)
 
 	return c.JSON(fiber.Map{
 		"accessToken":  result.AccessToken,
@@ -159,12 +168,33 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 	})
 }
 
-// ForgotPassword و ResetPassword: منطق إرسال البريد يُضاف مع خدمة البريد الفعلية.
-// الاستجابة هنا لا تكشف أبدًا ما إذا كان البريد مسجلًا أم لا (لحماية الخصوصية).
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ForgotPassword يرسل رابط استعادة عبر البريد إن كان مسجَّلًا. الاستجابة ثابتة
+// دائمًا (202) — لا تكشف أبدًا ما إذا كان البريد مسجلًا أم لا (docs/api-contract.md).
 func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
+	var req forgotPasswordRequest
+	_ = c.BodyParser(&req)
+	if req.Email != "" {
+		h.auth.ForgotPassword(c.Context(), req.Email)
+	}
 	return c.SendStatus(fiber.StatusAccepted)
 }
 
+type resetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"newPassword"`
+}
+
 func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
-	return utils.ErrorResponse(c, fiber.StatusNotImplemented, "not_implemented", "لم تُفعَّل هذه الميزة بعد")
+	var req resetPasswordRequest
+	if err := c.BodyParser(&req); err != nil || req.Token == "" || len(req.NewPassword) < 8 {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "token وكلمة مرور 8 أحرف على الأقل مطلوبان")
+	}
+	if err := h.auth.ResetPassword(c.Context(), req.Token, req.NewPassword); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadRequest, "invalid_token", "رابط الاستعادة غير صالح أو منتهي الصلاحية")
+	}
+	return c.JSON(fiber.Map{"reset": true})
 }

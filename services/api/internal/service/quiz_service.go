@@ -23,14 +23,15 @@ const diagnosticQuestionLimit = 10
 // إنشاء محاولة → حفظ إجابات فورًا → تسليم → حساب نتيجة داخل الخادم →
 // تحديث المهارات → إنشاء أخطاء للمراجعة.
 type QuizService struct {
-	db        *pgxpool.Pool
-	questions *repository.QuestionRepository
-	attempts  *repository.AttemptRepository
-	learning  *repository.LearningRepository
+	db           *pgxpool.Pool
+	questions    *repository.QuestionRepository
+	attempts     *repository.AttemptRepository
+	learning     *repository.LearningRepository
+	achievements *AchievementService
 }
 
-func NewQuizService(db *pgxpool.Pool, questions *repository.QuestionRepository, attempts *repository.AttemptRepository, learning *repository.LearningRepository) *QuizService {
-	return &QuizService{db: db, questions: questions, attempts: attempts, learning: learning}
+func NewQuizService(db *pgxpool.Pool, questions *repository.QuestionRepository, attempts *repository.AttemptRepository, learning *repository.LearningRepository, achievements *AchievementService) *QuizService {
+	return &QuizService{db: db, questions: questions, attempts: attempts, learning: learning, achievements: achievements}
 }
 
 // AttemptView ما يُرسَل للطالب: المحاولة + أسئلتها منقّاة من الإجابات الصحيحة.
@@ -258,7 +259,17 @@ func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*mo
 		return nil, err
 	}
 
-	_ = s.learning.TouchStreak(ctx, userID)
+	// الإنجازات (docs/daily-plan-rules.md §نظام الإنجازات): المنح آمن للاستدعاء المتكرر
+	if streak, err := s.learning.TouchStreak(ctx, userID); err == nil {
+		s.achievements.CheckStreak(ctx, userID, streak)
+	}
+	_, _ = s.achievements.Award(ctx, userID, "first_quiz")
+	for _, sr := range breakdown {
+		if sr.NewState == "mastered" {
+			_, _ = s.achievements.Award(ctx, userID, "first_skill_mastered")
+			break
+		}
+	}
 
 	result := &models.AttemptResult{
 		AttemptID:      attemptID,

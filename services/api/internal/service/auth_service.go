@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alemedu/api/internal/config"
+	"github.com/alemedu/api/internal/email"
 	"github.com/alemedu/api/internal/models"
 	"github.com/alemedu/api/internal/repository"
 	"github.com/alemedu/api/internal/utils"
@@ -15,14 +18,17 @@ import (
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+const passwordResetTTL = 1 * time.Hour
+
 type AuthService struct {
 	cfg      *config.Config
 	users    *repository.UserRepository
 	sessions *repository.SessionRepository
+	mailer   *email.Sender
 }
 
-func NewAuthService(cfg *config.Config, users *repository.UserRepository, sessions *repository.SessionRepository) *AuthService {
-	return &AuthService{cfg: cfg, users: users, sessions: sessions}
+func NewAuthService(cfg *config.Config, users *repository.UserRepository, sessions *repository.SessionRepository, mailer *email.Sender) *AuthService {
+	return &AuthService{cfg: cfg, users: users, sessions: sessions, mailer: mailer}
 }
 
 type AuthResult struct {
@@ -108,6 +114,48 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	}
 
 	return s.issueTokens(ctx, user, userAgent, ip)
+}
+
+// ForgotPassword يرسل رابط استعادة إن كان البريد مسجَّلًا. لا يكشف للمتصل ما
+// إذا كان الحساب موجودًا أم لا (نفس السلوك دائمًا) — docs/api-contract.md.
+func (s *AuthService) ForgotPassword(ctx context.Context, emailAddr string) {
+	user, err := s.users.FindByEmail(ctx, emailAddr)
+	if err != nil {
+		return // بريد غير مسجَّل: لا شيء يُرسَل، ولا فرق ملحوظ من الخارج
+	}
+
+	rawToken, err := generateOpaqueToken()
+	if err != nil {
+		return
+	}
+	tokenHash := hashResetToken(rawToken)
+	if err := s.users.CreatePasswordResetToken(ctx, user.ID, tokenHash, passwordResetTTL); err != nil {
+		return
+	}
+
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.cfg.WebBaseURL, rawToken)
+	_ = s.mailer.SendPasswordReset(user.Email, resetURL)
+}
+
+// ResetPassword يستهلك رمز الاستعادة، يحدّث كلمة المرور، ويلغي كل الجلسات القديمة.
+func (s *AuthService) ResetPassword(ctx context.Context, rawToken, newPassword string) error {
+	newHash, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = s.users.ConsumePasswordResetToken(ctx, hashResetToken(rawToken), newHash)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrInvalidCredentials
+		}
+		return err
+	}
+	return nil
+}
+
+func hashResetToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *AuthService) Me(ctx context.Context, userID string) (*models.PublicUser, error) {

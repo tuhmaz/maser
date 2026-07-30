@@ -6,9 +6,11 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/alemedu/api/internal/cache"
 	"github.com/alemedu/api/internal/config"
 	"github.com/alemedu/api/internal/database"
 	"github.com/alemedu/api/internal/router"
@@ -30,13 +32,19 @@ func main() {
 
 	app.Use(recover.New())
 	app.Use(logger.New())
+	app.Use(helmet.New()) // رؤوس أمنية: X-Frame-Options, X-Content-Type-Options, CSP أساسي، إلخ
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(cfg.CORSAllowedOrigins, ","),
 		AllowCredentials: true,
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 	}))
 
-	router.Setup(app, cfg, db)
+	var redisStorage fiber.Storage
+	if cfg.RedisURL != "" {
+		redisStorage = cache.NewStorage(cfg.RedisURL)
+	}
+
+	router.Setup(app, cfg, db, redisStorage)
 
 	log.Printf("Alemedu API يعمل على المنفذ %s (env=%s)", cfg.AppPort, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {

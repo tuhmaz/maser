@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { ArrowLeft, ListChecks, RefreshCcw, Sparkles, Target } from "lucide-react";
 import type { AttemptResult, SkillState } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
@@ -19,12 +20,12 @@ const STATE_LABELS: Record<SkillState, string> = {
 };
 
 const STATE_STYLES: Record<SkillState, string> = {
-  mastered: "bg-teal-50 text-teal-800 border-teal-200",
-  developing: "bg-amber-50 text-amber-800 border-amber-200",
-  needs_review: "bg-red-50 text-red-700 border-red-200",
-  practicing: "bg-slate-100 text-slate-600 border-slate-200",
-  introduced: "bg-slate-100 text-slate-600 border-slate-200",
-  not_started: "bg-slate-100 text-slate-600 border-slate-200",
+  mastered: "bg-[#e9f8f6] text-[#13827d]",
+  developing: "bg-[#edf3ff] text-[#244fc2]",
+  needs_review: "bg-[#fff3ec] text-[#d45c4b]",
+  practicing: "bg-[#f1edff] text-[#6b52c7]",
+  introduced: "bg-[#fff4d8] text-[#9a6500]",
+  not_started: "bg-slate-100 text-slate-500",
 };
 
 export default function ResultPage() {
@@ -45,36 +46,51 @@ export default function ResultPage() {
   const scoreRounded = Math.round(result.score);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 enter-up">
       <header>
         <p className="eyebrow">النتيجة</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">تقرير مفهوم وليس رقمًا فقط</h1>
+        <h1 className="student-page-title mt-2">هذه نقطة بداية، وليست حكماً عليك</h1>
+        <p className="student-page-copy">نستخدم إجاباتك لاختيار ما تتعلمه بعد ذلك وتحديد ما يحتاج تثبيتاً.</p>
       </header>
 
-      <div className="surface flex flex-wrap items-center justify-between gap-6 p-6 sm:p-8">
-        <div>
-          <p className="text-sm font-semibold text-slate-500">نتيجتك</p>
-          <p className="mt-1 text-5xl font-black text-slate-950">{scoreRounded}%</p>
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.65fr)]">
+        <div className="rounded-lg bg-[#3568e8] p-6 text-white sm:p-8">
+          <span className="status-chip bg-white/15 text-white">
+            <Sparkles size={15} aria-hidden="true" />
+            اكتملت الجلسة
+          </span>
+          <div className="mt-6 flex items-end gap-2">
+            <p className="text-6xl font-black">{scoreRounded}</p>
+            <span className="pb-1 text-xl font-black text-white/65">%</span>
+          </div>
+          <p className="mt-3 text-sm leading-7 text-white/75">هذه النسبة تساعد النظام على بناء خطتك، وليست درجة مدرسية.</p>
         </div>
-        <div className="text-sm text-slate-600">
-          <p>
-            <span className="font-bold text-slate-950">{result.correctCount}</span> إجابة صحيحة من أصل{" "}
-            <span className="font-bold text-slate-950">{result.totalCount}</span>
+        <div className="surface p-6">
+          <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#e9f8f6] text-[#13827d]">
+            <ListChecks size={22} aria-hidden="true" />
+          </span>
+          <p className="mt-4 text-sm font-bold text-slate-500">إجابات وصلت إليها</p>
+          <p className="mt-1 text-3xl font-black text-slate-950">
+            {result.correctCount} <span className="text-base text-slate-400">من {result.totalCount}</span>
           </p>
+          <p className="mt-3 text-xs leading-6 text-slate-500">سنراجع الباقي معك في مهام قصيرة لاحقاً.</p>
         </div>
-      </div>
+      </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-black text-slate-950">تفصيل المهارات</h2>
+        <div>
+          <h2 className="text-lg font-black text-slate-950">ماذا عرفنا عن مهاراتك؟</h2>
+          <p className="mt-1 text-sm text-slate-500">لكل مهارة وصف وخطوة تالية.</p>
+        </div>
         {result.skillBreakdown.length === 0 && (
           <p className="empty-state">لم تُربط أسئلة هذا الاختبار بمهارات بعد.</p>
         )}
-        <div className="space-y-3">
+        <div className="surface divide-y divide-[#edf0f5] overflow-hidden">
           {result.skillBreakdown.map((s) => (
-            <article key={s.skillId} className="surface p-5">
+            <article key={s.skillId} className="p-5 sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="font-bold text-slate-950">{s.skillName}</p>
-                <span className={`rounded-md border px-3 py-1 text-xs font-bold ${STATE_STYLES[s.newState]}`}>
+                <p className="font-black text-slate-950">{s.skillName}</p>
+                <span className={`status-chip ${STATE_STYLES[s.newState]}`}>
                   {STATE_LABELS[s.newState]}
                 </span>
               </div>
@@ -89,10 +105,17 @@ export default function ResultPage() {
 
       <div className="flex flex-wrap gap-3">
         <Link href="/today">
-          <Button>الذهاب إلى مهمتي اليوم</Button>
+          <Button>
+            <Target size={17} aria-hidden="true" />
+            افتح مهمتي اليوم
+            <ArrowLeft size={17} aria-hidden="true" />
+          </Button>
         </Link>
         <Link href="/mistakes">
-          <Button variant="secondary">مراجعة دفتر الأخطاء</Button>
+          <Button variant="secondary">
+            <RefreshCcw size={17} aria-hidden="true" />
+            فرص التحسن
+          </Button>
         </Link>
       </div>
     </div>

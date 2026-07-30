@@ -85,8 +85,9 @@ type AttemptResult struct {
 }
 
 // AnswerPayload الإجابة المرسلة من الطالب — الشكل يعتمد على نوع السؤال:
-//   single_choice / true_false: {"optionId": "..."}
-//   multi_select:               {"optionIds": ["...", ...]}
-//   numeric_input:              {"value": 12.5}
-//   ordering:                   {"orderedOptionIds": ["...", ...]}
+//
+//	single_choice / true_false: {"optionId": "..."}
+//	multi_select:               {"optionIds": ["...", ...]}
+//	numeric_input:              {"value": 12.5}
+//	ordering:                   {"orderedOptionIds": ["...", ...]}
 type AnswerPayload = json.RawMessage

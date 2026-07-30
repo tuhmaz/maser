@@ -66,12 +66,12 @@ func (h *AdminReportsHandler) Overview(c *fiber.Ctx) error {
 	_ = h.db.QueryRow(ctx, `SELECT AVG(score) FROM attempt_results`).Scan(&avgScore)
 
 	return c.JSON(fiber.Map{
-		"totalStudents":       totalStudents,
-		"questionsByStatus":   questionsByStatus,
-		"openContentReports":  openReports,
-		"highErrorQuestions":  highErrorQuestions,
+		"totalStudents":           totalStudents,
+		"questionsByStatus":       questionsByStatus,
+		"openContentReports":      openReports,
+		"highErrorQuestions":      highErrorQuestions,
 		"staleIncompleteAttempts": incompleteAttempts,
-		"averageScore":        avgScore,
+		"averageScore":            avgScore,
 	})
 }
 

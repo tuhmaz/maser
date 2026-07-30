@@ -68,8 +68,8 @@ func (h *ProgressHandler) Overview(c *fiber.Ctx) error {
 			"current": currentStreak,
 			"longest": longestStreak,
 		},
-		"lastQuizScore":     lastScore,
-		"mistakesDueNow":    dueMistakes,
+		"lastQuizScore":  lastScore,
+		"mistakesDueNow": dueMistakes,
 	})
 }
 
@@ -108,6 +108,109 @@ func (h *ProgressHandler) Skills(c *fiber.Ctx) error {
 		skills = append(skills, s)
 	}
 	return c.JSON(skills)
+}
+
+// Subject يعيد خريطة تقدم تفصيلية لمادة واحدة: كل وحداتها ودروسها مع حالة
+// إتقان كل مهارة مرتبطة، ونسبة إكمال إجمالية للمادة (docs/daily-plan-rules.md:
+// عناصر لوحة التقدم — "إكمال المادة" يُحتسب من المهارات وليس عدد الصفحات).
+func (h *ProgressHandler) Subject(c *fiber.Ctx) error {
+	userID, _ := middleware.UserIDFromContext(c)
+	subjectID := c.Params("subjectId")
+	ctx := c.Context()
+
+	var subjectName string
+	if err := h.db.QueryRow(ctx, `SELECT name FROM subjects WHERE id = $1`, subjectID).Scan(&subjectName); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "المادة غير موجودة")
+	}
+
+	unitRows, err := h.db.Query(ctx, `
+		SELECT id, name, "order" FROM units WHERE subject_id = $1 AND is_active = true ORDER BY "order"
+	`, subjectID)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر جلب وحدات المادة")
+	}
+	defer unitRows.Close()
+
+	type lessonProgress struct {
+		LessonID string      `json:"lessonId"`
+		Name     string      `json:"name"`
+		Skills   []fiber.Map `json:"skills"`
+	}
+	type unitProgress struct {
+		UnitID  string           `json:"unitId"`
+		Name    string           `json:"name"`
+		Lessons []lessonProgress `json:"lessons"`
+	}
+
+	units := []unitProgress{}
+	totalSkills, masteredSkills := 0, 0
+
+	for unitRows.Next() {
+		var u unitProgress
+		var unitID string
+		if err := unitRows.Scan(&unitID, &u.Name, new(int)); err != nil {
+			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر قراءة الوحدات")
+		}
+		u.UnitID = unitID
+
+		lessonRows, err := h.db.Query(ctx, `
+			SELECT id, name FROM lessons WHERE unit_id = $1 AND is_active = true ORDER BY "order"
+		`, unitID)
+		if err != nil {
+			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر جلب دروس الوحدة")
+		}
+		for lessonRows.Next() {
+			var l lessonProgress
+			if err := lessonRows.Scan(&l.LessonID, &l.Name); err != nil {
+				lessonRows.Close()
+				return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر قراءة الدروس")
+			}
+
+			skillRows, err := h.db.Query(ctx, `
+				SELECT sk.id, sk.name, COALESCE(m.state, 'not_started'), COALESCE(m.last_state_reason, '')
+				FROM lesson_skills ls
+				JOIN skills sk ON sk.id = ls.skill_id
+				LEFT JOIN student_skill_mastery m ON m.skill_id = sk.id AND m.user_id = $2
+				WHERE ls.lesson_id = $1
+				ORDER BY sk.name
+			`, l.LessonID, userID)
+			if err != nil {
+				lessonRows.Close()
+				return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر جلب مهارات الدرس")
+			}
+			for skillRows.Next() {
+				var skillID, name, state, reason string
+				if err := skillRows.Scan(&skillID, &name, &state, &reason); err != nil {
+					skillRows.Close()
+					lessonRows.Close()
+					return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر قراءة المهارات")
+				}
+				l.Skills = append(l.Skills, fiber.Map{"skillId": skillID, "name": name, "state": state, "reason": reason})
+				totalSkills++
+				if state == "mastered" {
+					masteredSkills++
+				}
+			}
+			skillRows.Close()
+			u.Lessons = append(u.Lessons, l)
+		}
+		lessonRows.Close()
+		units = append(units, u)
+	}
+
+	completion := 0
+	if totalSkills > 0 {
+		completion = masteredSkills * 100 / totalSkills
+	}
+
+	return c.JSON(fiber.Map{
+		"subjectId":         subjectID,
+		"subjectName":       subjectName,
+		"completionPercent": completion,
+		"totalSkills":       totalSkills,
+		"masteredSkills":    masteredSkills,
+		"units":             units,
+	})
 }
 
 // Skill يعيد مهارة واحدة بالتفصيل.

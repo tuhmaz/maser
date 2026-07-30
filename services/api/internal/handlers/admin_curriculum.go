@@ -110,12 +110,12 @@ func (h *AdminCurriculumHandler) UpdateUnit(c *fiber.Ctx) error {
 // --- الدروس ---
 
 type adminLessonDTO struct {
-	ID      string `json:"id"`
-	UnitID  string `json:"unitId"`
-	Name    string `json:"name"`
-	Summary string `json:"summary,omitempty"`
-	Order   int    `json:"order"`
-	IsActive bool  `json:"isActive"`
+	ID       string `json:"id"`
+	UnitID   string `json:"unitId"`
+	Name     string `json:"name"`
+	Summary  string `json:"summary,omitempty"`
+	Order    int    `json:"order"`
+	IsActive bool   `json:"isActive"`
 }
 
 func (h *AdminCurriculumHandler) ListLessons(c *fiber.Ctx) error {
@@ -202,11 +202,11 @@ func (h *AdminCurriculumHandler) UpdateLesson(c *fiber.Ctx) error {
 // --- المهارات ---
 
 type adminSkillDTO struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Description string  `json:"description,omitempty"`
-	Difficulty string   `json:"difficulty"`
-	LessonIDs  []string `json:"lessonIds"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Difficulty  string   `json:"difficulty"`
+	LessonIDs   []string `json:"lessonIds"`
 }
 
 func (h *AdminCurriculumHandler) ListSkills(c *fiber.Ctx) error {

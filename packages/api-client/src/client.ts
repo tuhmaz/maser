@@ -1,4 +1,7 @@
 import type {
+  Achievement,
+  AdminFeatureFlag,
+  AdminGrade,
   AdminLesson,
   AdminQuiz,
   AdminSkill,
@@ -10,20 +13,25 @@ import type {
   AttemptView,
   AuditLogEntry,
   AuthResponse,
+  ChildProgress,
   ContentIssue,
   DailyPlan,
+  FeatureFlagsMap,
   Grade,
+  IncomingLinkRequest,
   Lesson,
   LessonQuizRef,
   MistakeItem,
   ProgressOverview,
   QuestionDetail,
+  QuestionMedia,
   QuestionSummary,
   ReportsOverview,
   Role,
   SaveQuestionInput,
   StartTaskResult,
   Subject,
+  SubjectProgress,
   SkillProgress,
   Unit,
   User,
@@ -78,8 +86,9 @@ export class ApiClient {
 
   private async rawRequest(path: string, init?: RequestInit): Promise<Response> {
     const token = this.getAccessToken?.();
+    const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(init?.headers as Record<string, string> | undefined),
     };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -411,5 +420,79 @@ export class ApiClient {
   }
   adminListAuditLogs() {
     return this.request<AuditLogEntry[]>("/admin/reports/audit-logs");
+  }
+
+  // --- الإنجازات ---
+
+  listAchievements() {
+    return this.request<Achievement[]>("/achievements");
+  }
+
+  // --- أعلام الميزات ---
+
+  /** لا تتطلب مصادقة — تُستخدم لتفعيل/تعطيل ميزة في الواجهة فورًا. */
+  getFeatureFlags() {
+    return this.request<FeatureFlagsMap>("/feature-flags");
+  }
+
+  adminListFeatureFlags() {
+    return this.request<AdminFeatureFlag[]>("/admin/feature-flags");
+  }
+
+  adminUpdateFeatureFlag(key: string, input: { isEnabled?: boolean; rolloutPercentage?: number }) {
+    return this.request<{ updated: true }>(`/admin/feature-flags/${key}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  // --- إدارة الصفوف/المواد (مرحلة التوسع) ---
+
+  adminListGrades() {
+    return this.request<AdminGrade[]>("/admin/curricula/grades");
+  }
+  adminCreateGrade(input: { name: string; level: number }) {
+    return this.request<{ id: string }>("/admin/curricula/grades", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminCreateSubject(input: { gradeId: string; name: string; slug: string }) {
+    return this.request<{ id: string }>("/admin/curricula/subjects", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  // --- صور الأسئلة ---
+
+  adminListQuestionMedia(questionId: string) {
+    return this.request<QuestionMedia[]>(`/admin/questions/${questionId}/media`);
+  }
+  adminUploadQuestionMedia(questionId: string, file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return this.request<QuestionMedia>(`/admin/questions/${questionId}/media`, { method: "POST", body: form });
+  }
+
+  // --- التقدم التفصيلي لمادة ---
+
+  progressSubject(subjectId: string) {
+    return this.request<SubjectProgress>(`/progress/subjects/${subjectId}`);
+  }
+
+  // --- ولي الأمر ---
+
+  parentRequestLink(studentEmail: string) {
+    return this.request<{ requested: true }>("/parent/link-requests", {
+      method: "POST",
+      body: JSON.stringify({ studentEmail }),
+    });
+  }
+  parentIncomingRequests() {
+    return this.request<IncomingLinkRequest[]>("/parent/link-requests/incoming");
+  }
+  parentRespondToRequest(parentUserId: string, approve: boolean) {
+    return this.request<{ status: string }>(`/parent/link-requests/${parentUserId}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ approve }),
+    });
+  }
+  parentChildren() {
+    return this.request<ChildProgress[]>("/parent/children");
   }
 }

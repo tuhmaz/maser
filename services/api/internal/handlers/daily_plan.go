@@ -4,7 +4,9 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/alemedu/api/internal/analytics"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
 	"github.com/alemedu/api/internal/service"
@@ -12,11 +14,13 @@ import (
 )
 
 type DailyPlanHandler struct {
-	plans *service.DailyPlanService
+	plans        *service.DailyPlanService
+	achievements *service.AchievementService
+	db           *pgxpool.Pool
 }
 
-func NewDailyPlanHandler(plans *service.DailyPlanService) *DailyPlanHandler {
-	return &DailyPlanHandler{plans: plans}
+func NewDailyPlanHandler(plans *service.DailyPlanService, achievements *service.AchievementService, db *pgxpool.Pool) *DailyPlanHandler {
+	return &DailyPlanHandler{plans: plans, achievements: achievements, db: db}
 }
 
 // GetToday يعيد خطة اليوم، أو { plan: null } إن لم تُولَّد بعد
@@ -26,6 +30,9 @@ func (h *DailyPlanHandler) GetToday(c *fiber.Ctx) error {
 	plan, err := h.plans.GetToday(c.Context(), userID)
 	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر جلب خطة اليوم")
+	}
+	if plan != nil {
+		analytics.Track(c.Context(), h.db, "daily_plan_opened", userID, fiber.Map{"planId": plan.ID}, nil)
 	}
 	return c.JSON(fiber.Map{"plan": plan})
 }
@@ -72,5 +79,7 @@ func (h *DailyPlanHandler) CompleteTask(c *fiber.Ctx) error {
 		}
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر إكمال المهمة")
 	}
+	_, _ = h.achievements.Award(c.Context(), userID, "first_task")
+	analytics.Track(c.Context(), h.db, "daily_task_completed", userID, fiber.Map{"taskId": taskID}, nil)
 	return c.JSON(fiber.Map{"completed": true})
 }

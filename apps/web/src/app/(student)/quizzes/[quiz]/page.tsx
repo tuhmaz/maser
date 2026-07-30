@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, Sparkles } from "lucide-react";
 import type { AnswerPayload, AttemptView, SanitizedQuestion } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
@@ -24,6 +25,7 @@ export default function QuizPage() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Record<string, AnswerPayload>>({});
   const [startedAt] = useState(() => Date.now());
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +48,7 @@ export default function QuizPage() {
 
   const answeredCount = savedIds.size;
   const totalCount = view?.questions.length ?? 0;
+  const progress = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
 
   async function persistAnswer(questionId: string, answer: AnswerPayload) {
     setSavingIds((prev) => new Set(prev).add(questionId));
@@ -92,47 +95,77 @@ export default function QuizPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="surface flex flex-wrap items-center justify-between gap-3 p-5">
-        <div>
-          <p className="eyebrow">الاختبار</p>
-          <h1 className="mt-1 text-2xl font-black text-slate-950">جلسة اختبار محفوظة</h1>
+    <div className="mx-auto max-w-3xl space-y-5 enter-up">
+      <header className="surface overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-5 sm:px-6">
+          <div>
+            <p className="eyebrow">تحديد المستوى</p>
+            <h1 className="mt-1 text-xl font-black text-slate-950 sm:text-2xl">خذ كل سؤال على حدة</h1>
+          </div>
+          <span className="status-chip bg-[#edf3ff] text-[#244fc2]">
+            <Clock3 size={15} aria-hidden="true" />
+            يُحفظ تلقائياً
+          </span>
         </div>
-        <p className="text-sm font-semibold text-slate-500">
-          {answeredCount} من {totalCount} مُجاب
-        </p>
+        <div className="border-t border-[#edf0f5] bg-[#f9faff] px-5 py-4 sm:px-6">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+            <span>أجبت عن {answeredCount} من {totalCount}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="mt-2 progress-track">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
       </header>
 
-      <div className="space-y-4">
-        {view.questions.map((q, idx) => (
+      {view.questions[currentIndex] && (
+        <div>
           <QuestionCard
-            key={q.id}
-            index={idx + 1}
-            question={q}
-            saving={savingIds.has(q.id)}
-            saved={savedIds.has(q.id)}
-            value={draft[q.id]}
-            onAnswer={(answer) => setAndSave(q.id, answer)}
+            key={view.questions[currentIndex].id}
+            index={currentIndex + 1}
+            total={totalCount}
+            question={view.questions[currentIndex]}
+            saving={savingIds.has(view.questions[currentIndex].id)}
+            saved={savedIds.has(view.questions[currentIndex].id)}
+            value={draft[view.questions[currentIndex].id]}
+            onAnswer={(answer) => setAndSave(view.questions[currentIndex].id, answer)}
           />
-        ))}
-      </div>
+        </div>
+      )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>}
 
-      <div className="surface flex flex-col items-center gap-3 p-6 text-center">
-        <p className="text-sm text-slate-500">
-          يمكنك تسليم الاختبار متى شئت — الأسئلة غير المُجابة تُحسب ضمن الإجمالي.
-        </p>
-        <Button onClick={handleSubmit} disabled={submitting}>
-          {submitting ? "جارٍ التسليم..." : "تسليم الاختبار"}
+      <div className="flex items-center justify-between gap-3">
+        <Button
+          variant="secondary"
+          disabled={currentIndex === 0}
+          onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))}
+        >
+          <ArrowRight size={17} aria-hidden="true" />
+          السابق
         </Button>
+        {currentIndex < totalCount - 1 ? (
+          <Button onClick={() => setCurrentIndex((index) => Math.min(totalCount - 1, index + 1))}>
+            التالي
+            <ArrowLeft size={17} aria-hidden="true" />
+          </Button>
+        ) : (
+          <Button onClick={handleSubmit} disabled={submitting}>
+            <CheckCircle2 size={18} aria-hidden="true" />
+            {submitting ? "جارٍ التسليم..." : "إنهاء الاختبار"}
+          </Button>
+        )}
       </div>
+      <p className="text-center text-xs leading-6 text-slate-500">
+        لا بأس إن لم تعرف الإجابة. الاختبار يساعدنا في اختيار نقطة البداية فقط.
+      </p>
     </div>
   );
 }
 
 function QuestionCard({
   index,
+  total,
   question,
   saving,
   saved,
@@ -140,6 +173,7 @@ function QuestionCard({
   onAnswer,
 }: {
   index: number;
+  total: number;
   question: SanitizedQuestion;
   saving: boolean;
   saved: boolean;
@@ -147,16 +181,21 @@ function QuestionCard({
   onAnswer: (answer: AnswerPayload) => void;
 }) {
   return (
-    <article className="surface p-5 sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <p className="font-bold text-slate-950">
-          {index}. {question.body}
-        </p>
-        <StatusBadge saving={saving} saved={saved} />
+    <article className="surface overflow-hidden">
+      <div className="border-b border-[#edf0f5] bg-[#f9faff] px-5 py-4 sm:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-black text-[#3568e8]">السؤال {index} من {total}</span>
+          <StatusBadge saving={saving} saved={saved} />
+        </div>
       </div>
+      <div className="p-5 sm:p-7">
+        <p className="text-lg font-black leading-8 text-slate-950 sm:text-xl">
+          {question.body}
+        </p>
 
-      <div className="mt-4">
-        <QuestionInput question={question} value={value} onAnswer={onAnswer} />
+        <div className="mt-6">
+          <QuestionInput question={question} value={value} onAnswer={onAnswer} />
+        </div>
       </div>
     </article>
   );
@@ -164,8 +203,8 @@ function QuestionCard({
 
 function StatusBadge({ saving, saved }: { saving: boolean; saved: boolean }) {
   if (saving) return <span className="shrink-0 text-xs font-semibold text-slate-400">جارٍ الحفظ...</span>;
-  if (saved) return <span className="shrink-0 text-xs font-semibold text-teal-700">✓ محفوظة</span>;
-  return null;
+  if (saved) return <span className="flex shrink-0 items-center gap-1 text-xs font-bold text-[#13827d]"><Check size={14} aria-hidden="true" /> محفوظة</span>;
+  return <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-400"><Sparkles size={13} aria-hidden="true" /> اختر إجابتك</span>;
 }
 
 function QuestionInput({
@@ -186,14 +225,14 @@ function QuestionInput({
           {question.options?.map((opt) => (
             <label
               key={opt.id}
-              className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm font-semibold transition ${
-                selected === opt.id ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-200 hover:border-teal-300"
+              className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold transition ${
+                selected === opt.id ? "border-[#3568e8] bg-[#edf3ff] text-[#244fc2]" : "border-[#dfe5f0] bg-white text-slate-700 hover:border-[#b8c8ef]"
               }`}
             >
               <input
                 type="radio"
                 name={question.id}
-                className="accent-teal-700"
+                className="h-4 w-4 accent-[#3568e8]"
                 checked={selected === opt.id}
                 onChange={() => onAnswer({ optionId: opt.id })}
               />
@@ -213,13 +252,13 @@ function QuestionInput({
             return (
               <label
                 key={opt.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm font-semibold transition ${
-                  checked ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-200 hover:border-teal-300"
+                className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold transition ${
+                  checked ? "border-[#3568e8] bg-[#edf3ff] text-[#244fc2]" : "border-[#dfe5f0] bg-white text-slate-700 hover:border-[#b8c8ef]"
                 }`}
               >
                 <input
                   type="checkbox"
-                  className="accent-teal-700"
+                  className="h-4 w-4 accent-[#3568e8]"
                   checked={checked}
                   onChange={(e) => {
                     const next = e.target.checked
@@ -242,7 +281,7 @@ function QuestionInput({
         <input
           type="number"
           inputMode="decimal"
-          className="w-full max-w-xs rounded-md border border-slate-200 px-4 py-3 text-sm font-semibold"
+          className="w-full max-w-xs"
           placeholder="اكتب الإجابة"
           defaultValue={numValue}
           onBlur={(e) => {
@@ -289,13 +328,13 @@ function OrderingInput({
   return (
     <ol className="flex flex-col gap-2">
       {current.map((id, idx) => (
-        <li key={id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-4 py-3 text-sm font-semibold">
+        <li key={id} className="flex items-center justify-between gap-3 rounded-lg border border-[#dfe5f0] px-4 py-3 text-sm font-bold">
           <span>{idx + 1}. {byId[id]}</span>
           <span className="flex gap-1">
-            <button type="button" className="rounded-md border px-2 py-1 text-xs" onClick={() => move(idx, -1)} disabled={idx === 0}>
+            <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe5f0] text-xs" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="تحريك لأعلى">
               ↑
             </button>
-            <button type="button" className="rounded-md border px-2 py-1 text-xs" onClick={() => move(idx, 1)} disabled={idx === current.length - 1}>
+            <button type="button" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe5f0] text-xs" onClick={() => move(idx, 1)} disabled={idx === current.length - 1} aria-label="تحريك لأسفل">
               ↓
             </button>
           </span>

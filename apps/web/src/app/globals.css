@@ -3,72 +3,190 @@
 @tailwind utilities;
 
 :root {
-  --background: #f6f8f4;
-  --foreground: #10201d;
+  --background: #f5f7fb;
+  --foreground: #17243d;
   --surface: #ffffff;
-  --muted: #64716e;
-  --border: #dfe7e3;
-  --teal: #0f766e;
-  --amber: #f3b33d;
-  --coral: #e76f51;
+  --muted: #667085;
+  --border: #e3e8f2;
+  --primary: #3568e8;
+  --primary-dark: #244fc2;
+  --teal: #149c96;
+  --amber: #f4b942;
+  --coral: #f17867;
+  --violet: #7c62d9;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif;
-  width: 100%;
-  overflow-x: hidden;
-}
-
 html {
   width: 100%;
   overflow-x: hidden;
-  direction: ltr;
+  direction: rtl;
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+  width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
 }
 
 ::selection {
-  background: rgba(15, 118, 110, 0.16);
+  background: rgba(53, 104, 232, 0.18);
 }
 
 @layer base {
+  button,
+  a,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   input,
   select,
   textarea {
-    @apply rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100;
+    @apply min-h-12 w-full rounded-lg border bg-white px-4 py-3 text-sm text-slate-950 outline-none transition;
+    border-color: var(--border);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(53, 104, 232, 0.1);
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 3px solid rgba(53, 104, 232, 0.32);
+    outline-offset: 3px;
   }
 }
 
 @layer components {
   .page-shell {
-    @apply mx-auto w-full max-w-6xl px-5 py-8 sm:px-6 lg:px-8;
+    @apply mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8;
     min-width: 0;
     max-width: min(72rem, 100%);
   }
 
   .surface {
-    @apply rounded-md border border-slate-200 bg-white shadow-sm shadow-slate-200/50;
+    @apply rounded-lg border bg-white;
+    border-color: var(--border);
+    box-shadow: 0 12px 32px rgba(31, 48, 83, 0.06);
     min-width: 0;
     max-width: 100%;
   }
 
   .eyebrow {
-    @apply text-sm font-semibold text-teal-700;
+    @apply text-sm font-bold;
+    color: var(--primary);
   }
 
   .muted {
-    @apply text-slate-600;
+    color: var(--muted);
   }
 
   .empty-state {
-    @apply rounded-md border border-dashed border-slate-300 bg-white/70 p-6 text-center text-sm leading-7 text-slate-500;
+    @apply rounded-lg border border-dashed bg-white p-8 text-center text-sm leading-7;
+    border-color: #cfd7e8;
+    color: var(--muted);
   }
 
   .metric-card {
-    @apply rounded-md border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50;
+    @apply rounded-lg border bg-white p-5;
+    border-color: var(--border);
+    box-shadow: 0 8px 24px rgba(31, 48, 83, 0.05);
+  }
+
+  .soft-panel {
+    @apply rounded-lg border p-5;
+    border-color: #dfe5f0;
+    background: #f9faff;
+  }
+
+  .progress-track {
+    @apply h-2 overflow-hidden rounded-full;
+    background: #e8edf6;
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full;
+    background: var(--primary);
+    transition: width 500ms ease;
+  }
+
+  .status-chip {
+    @apply inline-flex min-h-7 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold;
+  }
+
+  .field-label {
+    @apply mb-2 block text-sm font-bold text-slate-700;
+  }
+
+  .auth-shell {
+    @apply grid min-h-screen bg-white lg:grid-cols-[minmax(0,0.9fr)_minmax(480px,1.1fr)];
+  }
+
+  .auth-panel {
+    @apply flex min-h-screen items-center justify-center px-5 py-10 sm:px-8;
+  }
+
+  .student-page-title {
+    @apply text-2xl font-black leading-tight text-slate-950 sm:text-3xl;
+  }
+
+  .student-page-copy {
+    @apply mt-2 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base;
+  }
+
+  .interactive-card {
+    @apply transition duration-200 hover:-translate-y-0.5;
+  }
+
+  .interactive-card:hover {
+    border-color: #c7d4f5;
+    box-shadow: 0 14px 32px rgba(53, 104, 232, 0.1);
+  }
+}
+
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.enter-up {
+  animation: enter-up 450ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

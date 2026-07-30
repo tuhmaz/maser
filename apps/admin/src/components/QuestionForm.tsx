@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AdminLesson,
   AdminQuestionOption,
   AdminSkill,
   QuestionDetail,
+  QuestionMedia,
   QuestionType,
   SaveQuestionInput,
 } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
+import { api } from "@/lib/api";
 
 const TYPE_LABELS: Record<QuestionType, string> = {
   single_choice: "اختيار من متعدد",
@@ -135,6 +137,8 @@ export function QuestionForm({
         <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={2} />
       </div>
 
+      {initial && <MediaUploader questionId={initial.id} />}
+
       {needsOptions && (
         <div className="flex flex-col gap-2">
           <label className="text-xs font-semibold text-slate-500">
@@ -209,5 +213,51 @@ export function QuestionForm({
         <Button type="button" variant="secondary" onClick={onCancel}>إلغاء</Button>
       </div>
     </form>
+  );
+}
+
+// رفع صورة للسؤال — docs/database-design.md: Object Storage، لا تُخزَّن الملفات
+// داخل قاعدة البيانات. سياسة صارمة على الخادم: صور فقط، حد 5 ميغابايت.
+function MediaUploader({ questionId }: { questionId: string }) {
+  const [items, setItems] = useState<QuestionMedia[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function load() {
+    api.adminListQuestionMedia(questionId).then(setItems).catch(() => setItems([]));
+  }
+  useEffect(load, [questionId]);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await api.adminUploadQuestionMedia(questionId, file);
+      load();
+    } catch (err: any) {
+      setError(err?.message ?? "تعذّر رفع الصورة");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-xs font-semibold text-slate-500">صور السؤال (اختياري)</label>
+      <div className="flex flex-wrap gap-3">
+        {items.map((m) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={m.id} src={m.url} alt="" className="h-20 w-20 rounded-md border border-slate-200 object-cover" />
+        ))}
+        <label className="flex h-20 w-20 cursor-pointer items-center justify-center rounded-md border border-dashed border-slate-300 text-xs text-slate-500 hover:border-teal-400">
+          {uploading ? "..." : "+ رفع"}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleFile} disabled={uploading} />
+        </label>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
   );
 }

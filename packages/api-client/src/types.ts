@@ -184,6 +184,87 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+// --- الإنجازات ---
+
+export interface Achievement {
+  key: string;
+  title: string;
+  description?: string;
+  earned: boolean;
+  earnedAt?: string;
+}
+
+// --- أعلام الميزات ---
+
+export type FeatureFlagsMap = Record<string, boolean>;
+
+export interface AdminFeatureFlag {
+  key: string;
+  isEnabled: boolean;
+  rolloutPercentage: number;
+  description?: string;
+}
+
+// --- ولي الأمر ---
+
+export interface IncomingLinkRequest {
+  parentUserId: string;
+  parentName: string;
+  parentEmail: string;
+}
+
+export interface ChildProgress {
+  studentUserId: string;
+  displayName: string;
+  gradeName?: string;
+  currentStreak: number;
+  lastQuizScore?: number;
+  masteredSkills: number;
+}
+
+// --- إدارة الصفوف/المواد ---
+
+export interface AdminGrade {
+  id: string;
+  name: string;
+  level: number;
+  isActive: boolean;
+}
+
+// --- خريطة تقدم مادة تفصيلية ---
+
+export interface SubjectProgressSkill {
+  skillId: string;
+  name: string;
+  state: SkillState;
+  reason: string;
+}
+export interface SubjectProgressLesson {
+  lessonId: string;
+  name: string;
+  skills: SubjectProgressSkill[];
+}
+export interface SubjectProgressUnit {
+  unitId: string;
+  name: string;
+  lessons: SubjectProgressLesson[];
+}
+export interface SubjectProgress {
+  subjectId: string;
+  subjectName: string;
+  completionPercent: number;
+  totalSkills: number;
+  masteredSkills: number;
+  units: SubjectProgressUnit[];
+}
+
+// --- صور الأسئلة ---
+
+export interface QuestionMedia {
+  id: string;
+  url: string;
+}
+
 // --- المنهاج (تكملة) ---
 
 export interface LessonQuizRef {

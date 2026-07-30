@@ -167,8 +167,10 @@ func (r *LearningRepository) ReviewOutcome(ctx context.Context, userID, mistakeI
 }
 
 // TouchStreak يحدّث سلسلة الأيام المتواصلة عند أي نشاط تعلم.
-func (r *LearningRepository) TouchStreak(ctx context.Context, userID string) error {
-	_, err := r.db.Exec(ctx, `
+// TouchStreak يعيد السلسلة الحالية بعد التحديث (تُستخدم لفحص إنجازات السلسلة).
+func (r *LearningRepository) TouchStreak(ctx context.Context, userID string) (int, error) {
+	var current int
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO student_streaks (user_id, current_streak, longest_streak, last_activity_date)
 		VALUES ($1, 1, 1, CURRENT_DATE)
 		ON CONFLICT (user_id) DO UPDATE SET
@@ -184,8 +186,9 @@ func (r *LearningRepository) TouchStreak(ctx context.Context, userID string) err
 			END),
 			last_activity_date = CURRENT_DATE,
 			updated_at = now()
-	`, userID)
-	return err
+		RETURNING current_streak
+	`, userID).Scan(&current)
+	return current, err
 }
 
 // SkillNames أسماء مهارات حسب معرفاتها (لبناء تقارير مفهومة).
