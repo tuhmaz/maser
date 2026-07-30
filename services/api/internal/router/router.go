@@ -47,6 +47,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool) {
 	auth.Post("/forgot-password", authHandler.ForgotPassword)
 	auth.Post("/reset-password", authHandler.ResetPassword)
 	auth.Get("/me", requireAuth, authHandler.Me)
+	auth.Post("/change-password", requireAuth, authHandler.ChangePassword)
 
 	// --- التهيئة ---
 	onboarding := app.Group("/onboarding", requireAuth)

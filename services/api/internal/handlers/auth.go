@@ -119,6 +119,46 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// ChangePassword يغيّر كلمة مرور المستخدم المسجَّل دخوله (طالبًا كان أو أدمن).
+// تُلغى كل الجلسات القديمة وتُصدَر رموز جديدة للجهاز الحالي.
+func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		return utils.ErrorResponse(c, fiber.StatusUnauthorized, "unauthorized", "غير مصرح")
+	}
+
+	var req changePasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadRequest, "invalid_body", "تعذّرت قراءة الطلب")
+	}
+	if len(req.NewPassword) < 8 {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "كلمة المرور الجديدة 8 أحرف على الأقل")
+	}
+	if req.CurrentPassword == req.NewPassword {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "كلمة المرور الجديدة يجب أن تختلف عن الحالية")
+	}
+
+	result, err := h.auth.ChangePassword(c.Context(), userID, req.CurrentPassword, req.NewPassword,
+		string(c.Request().Header.UserAgent()), c.IP())
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			return utils.ErrorResponse(c, fiber.StatusUnauthorized, "wrong_current_password", "كلمة المرور الحالية غير صحيحة")
+		}
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر تغيير كلمة المرور")
+	}
+
+	return c.JSON(fiber.Map{
+		"accessToken":  result.AccessToken,
+		"refreshToken": result.RefreshToken,
+		"user":         result.User,
+	})
+}
+
 // ForgotPassword و ResetPassword: منطق إرسال البريد يُضاف مع خدمة البريد الفعلية.
 // الاستجابة هنا لا تكشف أبدًا ما إذا كان البريد مسجلًا أم لا (لحماية الخصوصية).
 func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {

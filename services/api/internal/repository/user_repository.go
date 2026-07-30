@@ -100,6 +100,21 @@ func (r *UserRepository) FindByID(ctx context.Context, id string) (*models.User,
 	return &user, nil
 }
 
+// UpdatePassword يحدّث تجزئة كلمة المرور (التجزئة تتم في طبقة الخدمة).
+func (r *UserRepository) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE users SET password_hash = $2, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetPrimaryRole يعيد أول دور مرتبط بالمستخدم (student في السياق العادي لواجهة الطالب).
 func (r *UserRepository) GetPrimaryRole(ctx context.Context, userID string) (string, error) {
 	var role string

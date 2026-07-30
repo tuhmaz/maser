@@ -82,6 +82,34 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.sessions.RevokeByToken(ctx, refreshToken)
 }
 
+// ChangePassword يتحقق من كلمة المرور الحالية، يحدّث التجزئة، يلغي كل الجلسات
+// القديمة (docs/security-requirements.md: تُلغى الجلسات عند تغيير كلمة المرور)،
+// ثم يصدر جلسة جديدة للجهاز الحالي حتى لا يُطرد المستخدم من حسابه.
+func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, userAgent, ip string) (*AuthResult, error) {
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !utils.CheckPassword(user.PasswordHash, currentPassword) {
+		return nil, ErrInvalidCredentials
+	}
+
+	newHash, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.users.UpdatePassword(ctx, userID, newHash); err != nil {
+		return nil, err
+	}
+
+	if err := s.sessions.RevokeAllForUser(ctx, userID); err != nil {
+		return nil, err
+	}
+
+	return s.issueTokens(ctx, user, userAgent, ip)
+}
+
 func (s *AuthService) Me(ctx context.Context, userID string) (*models.PublicUser, error) {
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil {

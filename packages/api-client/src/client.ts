@@ -153,6 +153,14 @@ export class ApiClient {
     return this.request<User>("/auth/me");
   }
 
+  /** يغيّر كلمة المرور ويعيد رمزي جلسة جديدين (الجلسات القديمة تُلغى في الخادم). */
+  changePassword(input: { currentPassword: string; newPassword: string }) {
+    return this.request<AuthResponse>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
   // --- التهيئة ---
   completeOnboarding(input: { gradeId: string; subjectIds: string[] }) {
     return this.request<void>("/onboarding/complete", {
