@@ -39,15 +39,22 @@
 - ✅ RBAC مصدره الآن جداول `permissions`/`role_permissions` بدل خريطة ثابتة
   بالكود (انظر migration `0013_seed_permissions`) — كان أول بند حقيقي طلبه
   المخطط، ومُنفَّذ ومُتحقَّق حيًا.
+- ✅ **E01 — pgvector مُفعَّل وجدول `content_embeddings` جاهز** (migration
+  `0014_content_embeddings`). صورة Postgres المحلية وCI أصبحت
+  `pgvector/pgvector:pg16`. `internal/repository/embedding_repository.go`
+  يوفر CRUD أساسي (`Upsert`/`ForContent`/`DeleteForContent`) عبر
+  `github.com/pgvector/pgvector-go`. **الجدول فارغ عمدًا** — لا توليد فعلي
+  للتضمينات حتى اختيار مزوّد AI في E04. تحقُّق حي: إدراج/استرجاع متجه 1536
+  بعدًا عبر المستودع مباشرة على قاعدة التطوير، تطابق تام دون فقدان دقة.
 
-آخر رقم ترحيل مُستخدَم فعليًا: **0013**. أي حزمة AI لاحقة تبدأ ترقيمها من
-`0014`.
+آخر رقم ترحيل مُستخدَم فعليًا: **0014**. أي حزمة AI لاحقة تبدأ ترقيمها من
+`0015`.
 
 ## الحزم اللاحقة (نظرة عامة فقط — تُصمَّم بالتفصيل عند البدء الفعلي بكل واحدة)
 
 | الحزمة | الموضوع | ملاحظة توافق معماري |
 |---|---|---|
-| E01 | تفعيل `pgvector` + جدول تضمينات (embeddings) لمحتوى المنهاج | امتداد Postgres فقط، لا خدمة خارجية |
+| ~~E01~~ | ~~تفعيل `pgvector` + جدول تضمينات (embeddings) لمحتوى المنهاج~~ | ✅ منجزة |
 | E02 | طابور مهام AI داخل Postgres (`ai_jobs` + `FOR UPDATE SKIP LOCKED`) | يعيد استخدام نمط `Querier`/`WithTx` الموجود في `internal/repository` |
 | E03 | تجريد `Storage` (محلي حاليًا، S3 لاحقًا اختياريًا) | يغلّف `cfg.StorageDir` الحالي، لا يغيّر المسارات المنشورة `/assets` |
 | E04 | تكامل مزوّد AI واحد أولًا (لا تعدد مزوّدين من اليوم الأول) لتوليد مسودات أسئلة | يدخل عبر `POST /admin/questions` الحالي بحالة `draft`، يمر بنفس `validate()`/`validateHierarchy()` المُصلَحة هذا الموسم |
