@@ -4,7 +4,9 @@ info:
   description: >
     عقد الـ API الرسمي لمنصة Alemedu التعليمية.
     راجع docs/api-contract.md للشرح النصي المرافق.
-  version: "0.1.0"
+    يغطي هذا الملف كل مسار مسجَّل فعليًا في services/api/internal/router/router.go —
+    لا يوجد مسار غير موثَّق هنا.
+  version: "0.2.0"
 servers:
   - url: https://api.alemedu.com
     description: إنتاج
@@ -14,20 +16,55 @@ servers:
     description: محلي
 
 tags:
+  - name: system
+    description: فحص الصحة والربط الخارجي
   - name: auth
   - name: onboarding
   - name: curriculum
+    description: قراءة عامة (لا تتطلب مصادقة)
   - name: attempts
+    description: محرك الاختبارات
   - name: progress
   - name: mistakes
   - name: daily-plan
-  - name: admin
+  - name: achievements
+  - name: parent
+  - name: settings
+    description: هوية الموقع (عام)
+  - name: feature-flags
+    description: أعلام الميزات (عام)
+  - name: admin-curriculum
+  - name: admin-questions
+  - name: admin-users
+  - name: admin-feature-flags
+  - name: admin-reports
+  - name: admin-settings
 
 paths:
+  # ============================= النظام =============================
+  /health:
+    get:
+      tags: [system]
+      summary: فحص صحة الخادم
+      responses:
+        "200": { description: الخادم يعمل }
+
+  /r:
+    get:
+      tags: [system]
+      summary: إعادة توجيه من موقع الإيمان الخارجي مع تتبّع UTM
+      parameters:
+        - name: to
+          in: query
+          schema: { type: string }
+      responses:
+        "302": { description: إعادة توجيه }
+
+  # ============================= المصادقة =============================
   /auth/register:
     post:
       tags: [auth]
-      summary: إنشاء حساب جديد
+      summary: إنشاء حساب جديد (يرسل رابط تفعيل بريد ويضبط كوكي رمز التحديث)
       requestBody:
         required: true
         content:
@@ -42,16 +79,19 @@ paths:
       responses:
         "201":
           description: تم إنشاء الحساب
+          headers:
+            Set-Cookie: { schema: { type: string }, description: "refresh_token (HttpOnly)" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthResponse" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /auth/login:
     post:
       tags: [auth]
-      summary: تسجيل الدخول
+      summary: تسجيل الدخول (يضبط كوكي رمز التحديث)
       requestBody:
         required: true
         content:
@@ -65,34 +105,39 @@ paths:
       responses:
         "200":
           description: تم تسجيل الدخول
+          headers:
+            Set-Cookie: { schema: { type: string }, description: "refresh_token (HttpOnly)" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /auth/logout:
     post:
       tags: [auth]
-      summary: تسجيل الخروج
-      security: [{ bearerAuth: [] }]
+      summary: تسجيل الخروج (يلغي الجلسة ويمحو كوكي رمز التحديث)
       responses:
         "204": { description: تم تسجيل الخروج }
 
   /auth/refresh:
     post:
       tags: [auth]
-      summary: تحديث رمز الجلسة
+      summary: تجديد رمز الوصول من كوكي رمز التحديث (HttpOnly، لا جسم طلب)
       responses:
         "200":
-          description: رمز جديد
+          description: رمز وصول جديد + كوكي مُدوَّرة
+          headers:
+            Set-Cookie: { schema: { type: string }, description: "refresh_token جديدة (rotation)" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /auth/forgot-password:
     post:
       tags: [auth]
-      summary: طلب استعادة كلمة المرور
+      summary: طلب استعادة كلمة المرور (استجابة ثابتة دائمًا — لا كشف عن وجود الحساب)
       requestBody:
         required: true
         content:
@@ -104,11 +149,12 @@ paths:
                 email: { type: string, format: email }
       responses:
         "202": { description: تم إرسال رابط الاستعادة إن وُجد الحساب }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /auth/reset-password:
     post:
       tags: [auth]
-      summary: إعادة تعيين كلمة المرور
+      summary: إعادة تعيين كلمة المرور برمز الاستعادة
       requestBody:
         required: true
         content:
@@ -122,6 +168,7 @@ paths:
       responses:
         "200": { description: تم تحديث كلمة المرور }
         "400": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /auth/me:
     get:
@@ -139,7 +186,7 @@ paths:
   /auth/change-password:
     post:
       tags: [auth]
-      summary: تغيير كلمة المرور (يلغي الجلسات القديمة ويصدر رموزًا جديدة)
+      summary: تغيير كلمة المرور (يلغي كل الجلسات القديمة ويصدر رمزًا جديدًا لهذه الجلسة)
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -153,17 +200,80 @@ paths:
                 newPassword: { type: string, minLength: 8 }
       responses:
         "200":
-          description: تم التغيير — رموز جلسة جديدة
+          description: تم التغيير — رمز جلسة جديد
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      summary: تفعيل البريد الإلكتروني برمز مُرسَل بالبريد
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { description: "تم التفعيل: { verified: true }" }
+        "400": { description: رابط غير صالح أو منتهي }
+
+  /auth/resend-verification:
+    post:
+      tags: [auth]
+      summary: إعادة إرسال رابط تفعيل البريد للمستخدم الحالي
+      security: [{ bearerAuth: [] }]
+      responses:
+        "202": { description: أُعيد الإرسال (أو الحساب مفعَّل أصلًا) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/oauth/{provider}:
+    get:
+      tags: [auth]
+      summary: بدء تسجيل الدخول عبر Google/Facebook (تنقّل متصفح مباشر)
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [google, facebook] }
+      responses:
+        "302": { description: إعادة توجيه لصفحة موافقة المزوّد }
+        "502": { description: المزوّد غير مفعَّل على هذا الخادم (صفحة HTML) }
+
+  /auth/oauth/{provider}/callback:
+    get:
+      tags: [auth]
+      summary: عودة المزوّد بعد الموافقة — يضبط كوكي الجلسة ويعيد التوجيه لصفحة الواجهة
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [google, facebook] }
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: إعادة توجيه إلى {WEB_BASE_URL}/oauth-callback بلا أي رمز في الرابط
+          headers:
+            Set-Cookie: { schema: { type: string }, description: "refresh_token (HttpOnly)" }
+        "502": { description: فشل التبادل أو الحساب (صفحة HTML) }
+
+  # ============================= التهيئة =============================
   /onboarding/options:
     get:
       tags: [onboarding]
       summary: خيارات التهيئة (الصفوف/المواد المتاحة)
+      security: [{ bearerAuth: [] }]
       responses:
         "200": { description: قائمة الخيارات }
 
@@ -187,6 +297,7 @@ paths:
       responses:
         "200": { description: تمت التهيئة }
 
+  # ============================= المنهاج (عام) =============================
   /grades:
     get:
       tags: [curriculum]
@@ -222,10 +333,7 @@ paths:
     get:
       tags: [curriculum]
       parameters:
-        - name: unitId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/UnitId"
       responses:
         "200": { description: دروس الوحدة }
 
@@ -233,10 +341,7 @@ paths:
     get:
       tags: [curriculum]
       parameters:
-        - name: lessonId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/LessonId"
       responses:
         "200": { description: تفاصيل الدرس }
 
@@ -245,25 +350,24 @@ paths:
       tags: [curriculum]
       summary: اختبار الدرس المرتبط (لبدء الاختبار عبر /quizzes/{quizId}/start)
       parameters:
-        - name: lessonId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/LessonId"
       responses:
         "200": { description: مرجع الاختبار (id, type, title) }
         "404": { description: لا يوجد اختبار لهذا الدرس بعد }
 
+  # ============================= الاختبارات =============================
   /diagnostic/start:
     post:
       tags: [attempts]
-      summary: بدء الاختبار التشخيصي
+      summary: بدء الاختبار التشخيصي (أسئلة موزَّعة عبر مهارات المادة)
       security: [{ bearerAuth: [] }]
       responses:
         "201":
           description: محاولة جديدة
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Attempt" }
+              schema: { $ref: "#/components/schemas/AttemptView" }
+        "409": { description: "onboarding_required — أكمل تهيئة الحساب أولًا" }
 
   /quizzes/{quizId}/start:
     post:
@@ -280,26 +384,28 @@ paths:
           description: محاولة جديدة
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Attempt" }
+              schema: { $ref: "#/components/schemas/AttemptView" }
+        "404": { description: الاختبار غير موجود }
 
   /attempts/{attemptId}:
     get:
       tags: [attempts]
+      summary: استئناف محاولة (نسخة السؤال مجمَّدة عند بدء المحاولة)
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/AttemptId"
       responses:
         "200":
-          description: حالة المحاولة (لاستئناف الانقطاع)
+          description: حالة المحاولة
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Attempt" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+              schema: { $ref: "#/components/schemas/AttemptView" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /attempts/{attemptId}/answers:
     post:
       tags: [attempts]
-      summary: حفظ إجابة فورًا (idempotent لكل questionId)
+      summary: حفظ إجابة فورًا (idempotent لكل questionId ضمن المحاولة)
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/AttemptId"
@@ -312,22 +418,23 @@ paths:
               required: [questionId, answer]
               properties:
                 questionId: { type: string, format: uuid }
-                answer: {}
+                answer: { $ref: "#/components/schemas/AnswerPayload" }
                 timeSpentMs: { type: integer }
       responses:
-        "200": { description: تم حفظ الإجابة }
+        "200": { description: "{ saved: true }" }
         "409": { description: المحاولة منتهية بالفعل }
+        "422": { description: إجابة غير صالحة لهذا النوع من الأسئلة }
 
   /attempts/{attemptId}/submit:
     post:
       tags: [attempts]
-      summary: إنهاء المحاولة وحساب النتيجة (يتم داخل الخادم فقط)
+      summary: تسليم المحاولة وحساب النتيجة (ذرّي بالكامل — معاملة واحدة داخل الخادم)
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/AttemptId"
       responses:
         "200":
-          description: تم الإنهاء
+          description: تم التسليم (استدعاء مكرر يعيد نفس النتيجة المحفوظة — idempotent)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AttemptResult" }
@@ -340,17 +447,23 @@ paths:
         - $ref: "#/components/parameters/AttemptId"
       responses:
         "200":
-          description: نتيجة المحاولة
+          description: نتيجة محاولة مسلَّمة
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AttemptResult" }
+        "404": { description: لم تُسلَّم المحاولة بعد }
 
+  # ============================= التقدم =============================
   /progress:
     get:
       tags: [progress]
       security: [{ bearerAuth: [] }]
       responses:
-        "200": { description: التقدم العام }
+        "200":
+          description: التقدم العام
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProgressOverview" }
 
   /progress/subjects/{subjectId}:
     get:
@@ -359,90 +472,718 @@ paths:
       parameters:
         - $ref: "#/components/parameters/SubjectId"
       responses:
-        "200": { description: تقدم المادة }
+        "200":
+          description: خريطة تقدم مادة تفصيلية (وحدات → دروس → مهارات)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubjectProgress" }
 
   /progress/skills:
     get:
       tags: [progress]
       security: [{ bearerAuth: [] }]
       responses:
-        "200": { description: تقدم كل المهارات }
+        "200":
+          description: تقدم كل المهارات
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SkillProgress" }
 
   /progress/skills/{skillId}:
     get:
       tags: [progress]
       security: [{ bearerAuth: [] }]
       parameters:
-        - name: skillId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/SkillId"
       responses:
-        "200": { description: تقدم مهارة محددة مع تفسير التصنيف }
+        "200": { description: تقدم مهارة محددة مع تفسير التصنيف وعدد الإجابات الخاطئة }
 
+  # ============================= دفتر الأخطاء =============================
   /mistakes:
     get:
       tags: [mistakes]
+      summary: دفتر الأخطاء الكامل (غير المتقنة)، مع السؤال كاملًا للمراجعة التفاعلية
       security: [{ bearerAuth: [] }]
       responses:
-        "200": { description: دفتر الأخطاء الكامل }
+        "200":
+          description: قائمة الأخطاء
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MistakeItem" }
 
   /mistakes/due:
     get:
       tags: [mistakes]
+      summary: الأخطاء المستحقة للمراجعة الآن فقط
       security: [{ bearerAuth: [] }]
       responses:
-        "200": { description: الأخطاء المستحقة للمراجعة اليوم }
+        "200":
+          description: قائمة الأخطاء المستحقة
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MistakeItem" }
 
   /mistakes/{mistakeId}/review:
     post:
       tags: [mistakes]
+      summary: تصحيح إجابة مراجعة داخل الخادم (Grade فعلي، ليس تقييمًا ذاتيًا) وإعادة الجدولة
       security: [{ bearerAuth: [] }]
       parameters:
-        - name: mistakeId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/MistakeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer: { $ref: "#/components/schemas/AnswerPayload" }
       responses:
-        "200": { description: تم تسجيل نتيجة المراجعة وإعادة الجدولة }
+        "200": { description: "{ newState, correct } — correct محسوبة من الخادم حصرًا" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: إجابة غير صالحة لنوع هذا السؤال }
 
+  # ============================= المهمة اليومية =============================
   /daily-plan:
     get:
       tags: [daily-plan]
+      summary: خطة اليوم إن وُجدت (null إن لم تُولَّد بعد)
       security: [{ bearerAuth: [] }]
       responses:
-        "200": { description: خطة اليوم الحالية }
+        "200":
+          description: "{ plan: DailyPlan | null }"
 
   /daily-plan/generate:
     post:
       tags: [daily-plan]
+      summary: توليد خطة اليوم (عديمة الأثر الجانبي المكرر — استدعاء ثانٍ يعيد نفس الخطة)
       security: [{ bearerAuth: [] }]
       responses:
-        "201": { description: تم توليد خطة جديدة }
+        "201":
+          description: تم توليد/إعادة الخطة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailyPlan" }
+        "409": { description: "no_subject — لا مادة مسجَّلة للطالب" }
 
   /daily-tasks/{taskId}/start:
     post:
       tags: [daily-plan]
+      summary: بدء مهمة (يستأنف محاولة قائمة لنفس المهمة إن وُجدت بدل إنشاء أخرى)
       security: [{ bearerAuth: [] }]
       parameters:
-        - name: taskId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/TaskId"
       responses:
-        "200": { description: تم بدء المهمة }
+        "200":
+          description: نتيجة البدء
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StartTaskResult" }
+        "409": { description: "task_finished — المهمة مكتملة بالفعل" }
 
   /daily-tasks/{taskId}/complete:
     post:
       tags: [daily-plan]
+      summary: إكمال مهمة يدويًا (مهام الاختبار تُكمَل تلقائيًا عند التسليم)
       security: [{ bearerAuth: [] }]
       parameters:
-        - name: taskId
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200": { description: "{ completed: true }" }
+
+  # ============================= الإنجازات =============================
+  /achievements:
+    get:
+      tags: [achievements]
+      summary: كل الإنجازات مع حالة كل منها (محقَّق/غير محقَّق)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: قائمة الإنجازات
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Achievement" }
+
+  # ============================= ولي الأمر =============================
+  /parent/link-requests:
+    post:
+      tags: [parent]
+      summary: طلب ربط بولي الأمر الحالي مع طالب عبر بريده (يتطلب دور parent)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentEmail]
+              properties:
+                studentEmail: { type: string, format: email }
+      responses:
+        "201": { description: "{ requested: true }" }
+        "404": { description: لا يوجد حساب طالب بهذا البريد }
+
+  /parent/link-requests/incoming:
+    get:
+      tags: [parent]
+      summary: طلبات الربط المعلَّقة الموجَّهة للطالب الحالي (يتطلب دور student)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: قائمة الطلبات
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IncomingLinkRequest" }
+
+  /parent/link-requests/{parentId}/respond:
+    post:
+      tags: [parent]
+      summary: موافقة/رفض الطالب على طلب ربط (يتطلب دور student)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: parentId
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approve: { type: boolean }
       responses:
-        "200": { description: تم إكمال المهمة }
+        "200": { description: "{ status: active | revoked }" }
+        "404": { description: لا يوجد طلب معلَّق بهذا الشكل }
+
+  /parent/children:
+    get:
+      tags: [parent]
+      summary: تقدّم مبسَّط لكل طالب مرتبط فعليًا (يتطلب دور parent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: قائمة الأبناء وتقدمهم
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ChildProgress" }
+
+  # ============================= عام: هوية الموقع + أعلام الميزات =============================
+  /settings:
+    get:
+      tags: [settings]
+      summary: هوية الموقع العامة (اسم/شعار/عنوان/تواصل اجتماعي/جاهزية OAuth) — بلا مصادقة
+      responses:
+        "200":
+          description: إعدادات الموقع العامة
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicSiteSettings" }
+
+  /feature-flags:
+    get:
+      tags: [feature-flags]
+      summary: أعلام الميزات المفعَّلة فقط (بلا نسبة الإطلاق) — بلا مصادقة
+      responses:
+        "200":
+          description: خريطة مفتاح → مفعَّل
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlagsMap" }
+
+  # ============================= الإدارة: المنهاج =============================
+  /admin/curricula/grades:
+    get:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: قائمة الصفوف (لوحة الإدارة)
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/AdminGrade" } }
+    post:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, level]
+              properties:
+                name: { type: string }
+                level: { type: integer }
+      responses:
+        "201": { description: "{ id }" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/curricula/subjects:
+    post:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [gradeId, name, slug]
+              properties:
+                gradeId: { type: string, format: uuid }
+                name: { type: string }
+                slug: { type: string }
+      responses:
+        "201": { description: "{ id }" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/units:
+    get:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: subjectId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: قائمة الوحدات, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminUnit" } } } } }
+    post:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, name]
+              properties:
+                subjectId: { type: string, format: uuid }
+                name: { type: string }
+                order: { type: integer }
+      responses:
+        "201": { description: "{ id }" }
+
+  /admin/units/{id}:
+    put:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                order: { type: integer }
+                isActive: { type: boolean }
+      responses:
+        "200": { description: "{ updated: true }" }
+
+  /admin/lessons:
+    get:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: unitId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: قائمة الدروس, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminLesson" } } } } }
+    post:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [unitId, name]
+              properties:
+                unitId: { type: string, format: uuid }
+                name: { type: string }
+                summary: { type: string }
+                order: { type: integer }
+      responses:
+        "201": { description: "{ id }" }
+
+  /admin/lessons/{id}:
+    put:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                summary: { type: string }
+                order: { type: integer }
+                isActive: { type: boolean }
+      responses:
+        "200": { description: "{ updated: true }" }
+
+  /admin/skills:
+    get:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: قائمة المهارات, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminSkill" } } } } }
+    post:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, lessonIds]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                difficulty: { type: string, enum: [easy, medium, hard] }
+                lessonIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "201": { description: "{ id }" }
+
+  /admin/skills/{id}:
+    put:
+      tags: [admin-curriculum]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                difficulty: { type: string, enum: [easy, medium, hard] }
+                lessonIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "200": { description: "{ updated: true }" }
+
+  /admin/quizzes:
+    get:
+      tags: [admin-curriculum]
+      summary: قائمة الاختبارات (للقراءة فقط — تُنشأ تلقائيًا عند نشر أول سؤال في الدرس)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: قائمة الاختبارات, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminQuiz" } } } } }
+
+  # ============================= الإدارة: الأسئلة =============================
+  /admin/questions:
+    get:
+      tags: [admin-questions]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, in_review, changes_requested, approved, published, archived] }
+        - name: lessonId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: بحث نصي في محتوى السؤال
+      responses:
+        "200": { description: قائمة الأسئلة (مع usage/errorRate/openReports), content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuestionSummary" } } } } }
+    post:
+      tags: [admin-questions]
+      summary: إنشاء سؤال جديد كمسودة (يتحقق من تسلسل المنهج وملكية المهارات للدرس)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveQuestionInput" }
+      responses:
+        "201": { description: "{ id }" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /admin/questions/{id}:
+    get:
+      tags: [admin-questions]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: تفاصيل السؤال الكاملة, content: { application/json: { schema: { $ref: "#/components/schemas/QuestionDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [admin-questions]
+      summary: تحرير السؤال — تعديل بعد النشر ينشئ نسخة جديدة؛ أي تعديل أثناء in_review/approved يعيده إلى draft
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveQuestionInput" }
+      responses:
+        "200": { description: "{ updated: true, newVersionCreated: boolean }" }
+        "409": { description: لا يمكن تعديل سؤال مؤرشف }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [admin-questions]
+      summary: حذف — للمسودات التي لم تُنشر أبدًا فقط
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: تم الحذف }
+        "409": { description: غير قابل للحذف — استخدم الأرشفة }
+
+  /admin/questions/{id}/submit-review:
+    post:
+      tags: [admin-questions]
+      summary: إرسال للمراجعة (draft/changes_requested → in_review)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: "{ status: in_review }" }
+        "409": { description: انتقال حالة غير صالح }
+
+  /admin/questions/{id}/review:
+    post:
+      tags: [admin-questions]
+      summary: قرار المراجع (approved | changes_requested)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, changes_requested] }
+                comment: { type: string }
+      responses:
+        "200": { description: "{ status }" }
+        "409": { description: السؤال ليس قيد المراجعة حاليًا }
+
+  /admin/questions/{id}/publish:
+    post:
+      tags: [admin-questions]
+      summary: نشر أحدث إصدار معتمد (ينشئ اختبار الدرس تلقائيًا عند أول نشر فيه)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: "{ status: published, quizId }" }
+        "409": { description: لم يُعتمَد بعد }
+        "422": { description: "unsupported_type — نوع matching لا يملك تصحيحًا تلقائيًا بعد" }
+
+  /admin/questions/{id}/archive:
+    post:
+      tags: [admin-questions]
+      summary: أرشفة (يختفي من الاختبارات الجديدة، تبقى محاولات الطلاب القديمة سليمة)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: "{ status: archived }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/questions/{id}/media:
+    post:
+      tags: [admin-questions]
+      summary: رفع صورة لأحدث إصدار من السؤال
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201": { description: "{ id, url }" }
+        "422": { description: نوع/حجم ملف غير مسموح }
+    get:
+      tags: [admin-questions]
+      summary: صور آخر إصدار من السؤال
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: قائمة الصور, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuestionMedia" } } } } }
+
+  /admin/reviews:
+    get:
+      tags: [admin-questions]
+      summary: اختصار — أسئلة بحالة in_review فقط (نفس شكل رد /admin/questions)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: قائمة الأسئلة قيد المراجعة, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/QuestionSummary" } } } } }
+
+  # ============================= الإدارة: المستخدمون =============================
+  /admin/users:
+    get:
+      tags: [admin-users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: role
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: قائمة المستخدمين, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminUser" } } } } }
+
+  /admin/users/{id}/role:
+    put:
+      tags: [admin-users]
+      summary: تغيير دور مستخدم — حصرًا لـ admin/super_admin؛ admin عادي لا يستطيع تعديل دور مستخدم إداري آخر
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [student, parent, content_editor, content_reviewer, support, admin] }
+      responses:
+        "200": { description: "{ role }" }
+        "403": { description: أدمن عادي يحاول تعديل مستخدم إداري آخر }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ============================= الإدارة: أعلام الميزات =============================
+  /admin/feature-flags:
+    get:
+      tags: [admin-feature-flags]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: كل الأعلام مع نسبة الإطلاق, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminFeatureFlag" } } } } }
+
+  /admin/feature-flags/{key}:
+    put:
+      tags: [admin-feature-flags]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isEnabled: { type: boolean }
+                rolloutPercentage: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        "200": { description: تم التحديث }
+
+  # ============================= الإدارة: التقارير =============================
+  /admin/reports/overview:
+    get:
+      tags: [admin-reports]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: مؤشرات تشغيل, content: { application/json: { schema: { $ref: "#/components/schemas/ReportsOverview" } } } }
+
+  /admin/reports/content-issues:
+    get:
+      tags: [admin-reports]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: بلاغات المحتوى, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ContentIssue" } } } } }
+
+  /admin/reports/content-issues/{id}/resolve:
+    post:
+      tags: [admin-reports]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: "{ status: resolved }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/reports/audit-logs:
+    get:
+      tags: [admin-reports]
+      summary: سجل التدقيق الكامل — admin/super_admin فقط
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: سجل التدقيق, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditLogEntry" } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ============================= الإدارة: إعدادات الموقع =============================
+  /admin/settings:
+    get:
+      tags: [admin-settings]
+      summary: إعدادات الموقع كاملة (بلا كلمة مرور SMTP الفعلية) — admin/super_admin فقط
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: الإعدادات, content: { application/json: { schema: { $ref: "#/components/schemas/AdminSiteSettings" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [admin-settings]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSiteSettingsInput" }
+      responses:
+        "200": { description: "{ updated: true }" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/settings/logo:
+    post:
+      tags: [admin-settings]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: "{ url }" }
+        "422": { description: نوع/حجم ملف غير مسموح }
+
+  /admin/settings/favicon:
+    post:
+      tags: [admin-settings]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: "{ url }" }
+        "422": { description: نوع/حجم ملف غير مسموح }
 
 components:
   securitySchemes:
@@ -452,6 +1193,11 @@ components:
       bearerFormat: JWT
 
   parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     GradeId:
       name: gradeId
       in: path
@@ -462,8 +1208,33 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    UnitId:
+      name: unitId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LessonId:
+      name: lessonId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SkillId:
+      name: skillId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     AttemptId:
       name: attemptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MistakeId:
+      name: mistakeId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TaskId:
+      name: taskId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -489,6 +1260,16 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: غير موجود
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: محاولات كثيرة جدًا (20 طلب/دقيقة لكل IP على المسارات الحساسة)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
     Error:
@@ -508,24 +1289,74 @@ components:
         displayName: { type: string }
         role: { type: string, enum: [student, parent, content_editor, content_reviewer, support, admin, super_admin] }
         onboardingCompleted: { type: boolean }
+        emailVerified: { type: boolean }
 
     AuthResponse:
       type: object
+      description: >
+        لا يوجد حقل refreshToken هنا عمدًا — يصل عبر كوكي HttpOnly لا تراها
+        جافاسكربت إطلاقًا (Set-Cookie في ترويسة الرد).
       properties:
         accessToken: { type: string }
-        refreshToken: { type: string }
         user: { $ref: "#/components/schemas/User" }
+
+    AnswerPayload:
+      description: شكلها يعتمد على نوع السؤال
+      oneOf:
+        - type: object
+          properties: { optionId: { type: string, format: uuid } }
+        - type: object
+          properties: { optionIds: { type: array, items: { type: string, format: uuid } } }
+        - type: object
+          properties: { value: { type: number } }
+        - type: object
+          properties: { orderedOptionIds: { type: array, items: { type: string, format: uuid } } }
+
+    SanitizedOption:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        order: { type: integer }
+
+    SanitizedQuestion:
+      type: object
+      description: سؤال بلا كشف الإجابة الصحيحة — الشكل الوحيد المرسَل قبل التسليم
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [single_choice, true_false, numeric_input, multi_select, ordering, matching] }
+        body: { type: string }
+        options: { type: array, items: { $ref: "#/components/schemas/SanitizedOption" } }
+        answered: { type: boolean }
 
     Attempt:
       type: object
       properties:
         id: { type: string, format: uuid }
+        quizId: { type: string, format: uuid }
         type: { type: string, enum: [diagnostic, lesson, unit, review, daily] }
         status: { type: string, enum: [in_progress, submitted] }
+        questionOrder: { type: array, items: { type: string, format: uuid } }
         startedAt: { type: string, format: date-time }
-        questions:
-          type: array
-          items: { type: object }
+        submittedAt: { type: string, format: date-time }
+
+    AttemptView:
+      type: object
+      properties:
+        attempt: { $ref: "#/components/schemas/Attempt" }
+        questions: { type: array, items: { $ref: "#/components/schemas/SanitizedQuestion" } }
+
+    SkillResult:
+      type: object
+      properties:
+        skillId: { type: string, format: uuid }
+        skillName: { type: string }
+        correct: { type: integer }
+        total: { type: integer }
+        newState:
+          type: string
+          enum: [not_started, introduced, practicing, developing, mastered, needs_review]
+        reason: { type: string, description: تفسير نصي مفهوم لسبب هذا التصنيف }
 
     AttemptResult:
       type: object
@@ -533,16 +1364,345 @@ components:
         attemptId: { type: string, format: uuid }
         score: { type: number }
         correctCount: { type: integer }
-        totalCount: { type: integer }
-        skillUpdates:
+        totalCount: { type: integer, description: يشمل الأسئلة غير المُجابة (تُحتسَب خاطئة) }
+        skillBreakdown: { type: array, items: { $ref: "#/components/schemas/SkillResult" } }
+
+    ProgressOverview:
+      type: object
+      properties:
+        skills:
+          type: object
+          properties: { total: { type: integer }, mastered: { type: integer }, needsReview: { type: integer } }
+        questionsAnswered: { type: integer }
+        streak:
+          type: object
+          properties: { current: { type: integer }, longest: { type: integer } }
+        lastQuizScore: { type: number, nullable: true }
+        mistakesDueNow: { type: integer }
+
+    SkillProgress:
+      type: object
+      properties:
+        skillId: { type: string, format: uuid }
+        name: { type: string }
+        state: { type: string }
+        reason: { type: string }
+        questionsSeen: { type: integer }
+        correctCount: { type: integer }
+
+    SubjectProgress:
+      type: object
+      properties:
+        subjectId: { type: string, format: uuid }
+        subjectName: { type: string }
+        completionPercent: { type: number }
+        totalSkills: { type: integer }
+        masteredSkills: { type: integer }
+        units:
           type: array
           items:
             type: object
             properties:
-              skillId: { type: string, format: uuid }
-              newState:
-                type: string
-                enum: [not_started, introduced, practicing, developing, mastered, needs_review]
-        newMistakes:
-          type: array
-          items: { type: object }
+              unitId: { type: string, format: uuid }
+              name: { type: string }
+              lessons:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    lessonId: { type: string, format: uuid }
+                    name: { type: string }
+                    skills:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          skillId: { type: string, format: uuid }
+                          name: { type: string }
+                          state: { type: string }
+                          reason: { type: string }
+
+    MistakeItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        questionId: { type: string, format: uuid }
+        questionBody: { type: string }
+        skillName: { type: string }
+        mistakeCount: { type: integer }
+        state: { type: string }
+        nextReviewAt: { type: string, format: date-time }
+        question: { $ref: "#/components/schemas/SanitizedQuestion" }
+
+    DailyTask:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [short_review, explanation, new_questions, mistake_question, stabilization_test] }
+        order: { type: integer }
+        status: { type: string, enum: [pending, in_progress, completed] }
+        payload: { type: object }
+
+    DailyPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        type: { type: string, enum: [short, regular, review, catch_up] }
+        estimatedMinutes: { type: integer }
+        tasks: { type: array, items: { $ref: "#/components/schemas/DailyTask" } }
+
+    StartTaskResult:
+      type: object
+      properties:
+        kind: { type: string, enum: [attempt, review, explanation] }
+        attempt: { $ref: "#/components/schemas/AttemptView" }
+
+    Achievement:
+      type: object
+      properties:
+        key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        earned: { type: boolean }
+        earnedAt: { type: string, format: date-time }
+
+    IncomingLinkRequest:
+      type: object
+      properties:
+        parentUserId: { type: string, format: uuid }
+        parentName: { type: string }
+        parentEmail: { type: string, format: email }
+
+    ChildProgress:
+      type: object
+      properties:
+        studentUserId: { type: string, format: uuid }
+        displayName: { type: string }
+        gradeName: { type: string }
+        currentStreak: { type: integer }
+        lastQuizScore: { type: number, nullable: true }
+        masteredSkills: { type: integer }
+
+    OAuthProviders:
+      type: object
+      properties:
+        google: { type: boolean }
+        facebook: { type: boolean }
+
+    PublicSiteSettings:
+      type: object
+      properties:
+        siteName: { type: string }
+        tagline: { type: string }
+        logoUrl: { type: string }
+        faviconUrl: { type: string }
+        contactEmail: { type: string }
+        supportEmail: { type: string }
+        socialFacebook: { type: string }
+        socialTwitter: { type: string }
+        socialInstagram: { type: string }
+        socialYoutube: { type: string }
+        socialWhatsapp: { type: string }
+        oauthProviders: { $ref: "#/components/schemas/OAuthProviders" }
+
+    AdminSiteSettings:
+      allOf:
+        - $ref: "#/components/schemas/PublicSiteSettings"
+        - type: object
+          properties:
+            smtpEnabled: { type: boolean }
+            smtpHost: { type: string }
+            smtpPort: { type: string }
+            smtpUser: { type: string }
+            smtpPassSet: { type: boolean, description: "لا تُعاد كلمة المرور نفسها أبدًا" }
+            smtpFromName: { type: string }
+            smtpFromEmail: { type: string }
+
+    UpdateSiteSettingsInput:
+      type: object
+      description: كل الحقول اختيارية (تحديث جزئي)؛ smtpPass فارغ/غائب = لا تغيير
+      properties:
+        siteName: { type: string }
+        tagline: { type: string }
+        contactEmail: { type: string }
+        supportEmail: { type: string }
+        socialFacebook: { type: string }
+        socialTwitter: { type: string }
+        socialInstagram: { type: string }
+        socialYoutube: { type: string }
+        socialWhatsapp: { type: string }
+        smtpEnabled: { type: boolean }
+        smtpHost: { type: string }
+        smtpPort: { type: string }
+        smtpUser: { type: string }
+        smtpPass: { type: string }
+        smtpFromName: { type: string }
+        smtpFromEmail: { type: string }
+
+    FeatureFlagsMap:
+      type: object
+      additionalProperties: { type: boolean }
+
+    AdminFeatureFlag:
+      type: object
+      properties:
+        key: { type: string }
+        isEnabled: { type: boolean }
+        rolloutPercentage: { type: integer }
+        description: { type: string }
+
+    AdminGrade:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        level: { type: integer }
+        isActive: { type: boolean }
+
+    AdminUnit:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subjectId: { type: string, format: uuid }
+        name: { type: string }
+        order: { type: integer }
+        isActive: { type: boolean }
+
+    AdminLesson:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        name: { type: string }
+        summary: { type: string }
+        order: { type: integer }
+        isActive: { type: boolean }
+
+    AdminSkill:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        lessonIds: { type: array, items: { type: string, format: uuid } }
+
+    AdminQuiz:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lessonId: { type: string, format: uuid }
+        lessonName: { type: string }
+        title: { type: string }
+        questionCount: { type: integer }
+
+    AdminQuestionOption:
+      type: object
+      required: [text, order, isCorrect]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string }
+        order: { type: integer }
+        isCorrect: { type: boolean }
+        wrongReason: { type: string }
+
+    SaveQuestionInput:
+      type: object
+      required: [gradeId, subjectId, unitId, lessonId, type, body, skillIds]
+      properties:
+        gradeId: { type: string, format: uuid }
+        subjectId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        lessonId: { type: string, format: uuid }
+        type: { type: string, enum: [single_choice, true_false, numeric_input, multi_select, ordering, matching] }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        expectedTimeSec: { type: integer, minimum: 5, maximum: 900 }
+        body: { type: string }
+        explanation: { type: string }
+        options: { type: array, items: { $ref: "#/components/schemas/AdminQuestionOption" } }
+        numericAnswer: { type: string }
+        tolerance: { type: number, minimum: 0 }
+        skillIds: { type: array, items: { type: string, format: uuid } }
+
+    QuestionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lessonId: { type: string, format: uuid }
+        lessonName: { type: string }
+        type: { type: string }
+        difficulty: { type: string }
+        status: { type: string, enum: [draft, in_review, changes_requested, approved, published, archived] }
+        body: { type: string }
+        usageCount: { type: integer }
+        errorRate: { type: number, nullable: true }
+        openReports: { type: integer }
+
+    QuestionDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        gradeId: { type: string, format: uuid }
+        subjectId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        lessonId: { type: string, format: uuid }
+        type: { type: string }
+        difficulty: { type: string }
+        expectedTimeSec: { type: integer }
+        status: { type: string }
+        versionNumber: { type: integer }
+        body: { type: string }
+        explanation: { type: string }
+        options: { type: array, items: { $ref: "#/components/schemas/AdminQuestionOption" } }
+        numericAnswer: { type: string }
+        tolerance: { type: number }
+        skillIds: { type: array, items: { type: string, format: uuid } }
+
+    QuestionMedia:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+
+    AdminUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        role: { type: string }
+        isActive: { type: boolean }
+        gradeName: { type: string }
+        currentStreak: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    ReportsOverview:
+      type: object
+      properties:
+        totalStudents: { type: integer }
+        questionsByStatus: { type: object, additionalProperties: { type: integer } }
+        openContentReports: { type: integer }
+        highErrorQuestions: { type: integer }
+        staleIncompleteAttempts: { type: integer }
+        averageScore: { type: number, nullable: true }
+
+    ContentIssue:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        questionId: { type: string, format: uuid }
+        questionBody: { type: string }
+        reason: { type: string }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        createdAt: { type: string, format: date-time }
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actorEmail: { type: string }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        createdAt: { type: string, format: date-time }

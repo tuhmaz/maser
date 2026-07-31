@@ -4,6 +4,7 @@ import type {
   AdminGrade,
   AdminLesson,
   AdminQuiz,
+  AdminSiteSettings,
   AdminSkill,
   AdminUnit,
   AdminUser,
@@ -23,6 +24,7 @@ import type {
   LessonQuizRef,
   MistakeItem,
   ProgressOverview,
+  PublicSiteSettings,
   QuestionDetail,
   QuestionMedia,
   QuestionSummary,
@@ -34,6 +36,7 @@ import type {
   SubjectProgress,
   SkillProgress,
   Unit,
+  UpdateSiteSettingsInput,
   User,
 } from "./types";
 
@@ -50,9 +53,7 @@ export class ApiError extends Error {
 export interface ApiClientOptions {
   baseUrl: string;
   getAccessToken?: () => string | null | undefined;
-  /** رمز التحديث المخزن — إن وُجد يجدَّد الوصول تلقائيًا عند انتهاء الجلسة. */
-  getRefreshToken?: () => string | null | undefined;
-  /** يُستدعى بعد نجاح التجديد لتخزين الرمزين الجديدين. */
+  /** يُستدعى بعد نجاح التجديد لتخزين رمز الوصول الجديد (في الذاكرة فقط). */
   onTokensUpdated?: (auth: AuthResponse) => void;
   /** يُستدعى عند فشل التجديد نهائيًا (مثلًا: توجيه المستخدم لصفحة الدخول). */
   onAuthFailure?: () => void;
@@ -65,13 +66,14 @@ export interface ApiClientOptions {
  * القاعدة الذهبية (docs/security-requirements.md): هذا العميل لا يحسب أي نتيجة
  * أو صلاحية محليًا؛ كل قرار يُتخذ من استجابة الخادم فقط.
  *
- * الجلسة: عند رد 401 على مسار محمي يحاول العميل تجديد الرمز مرة واحدة عبر
- * /auth/refresh ثم يعيد الطلب؛ إن فشل التجديد يستدعي onAuthFailure.
+ * الجلسة: رمز التحديث كوكي HttpOnly لا يراها هذا العميل إطلاقًا — كل طلب
+ * يُرسَل بـ credentials:"include" فتُرفَق الكوكي تلقائيًا من المتصفح. عند رد
+ * 401 على مسار محمي يحاول العميل تجديد رمز الوصول مرة واحدة عبر /auth/refresh
+ * ثم يعيد الطلب؛ إن فشل التجديد يستدعي onAuthFailure.
  */
 export class ApiClient {
   private baseUrl: string;
   private getAccessToken?: () => string | null | undefined;
-  private getRefreshToken?: () => string | null | undefined;
   private onTokensUpdated?: (auth: AuthResponse) => void;
   private onAuthFailure?: () => void;
   private refreshInFlight: Promise<boolean> | null = null;
@@ -79,7 +81,6 @@ export class ApiClient {
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.getAccessToken = options.getAccessToken;
-    this.getRefreshToken = options.getRefreshToken;
     this.onTokensUpdated = options.onTokensUpdated;
     this.onAuthFailure = options.onAuthFailure;
   }
@@ -92,20 +93,17 @@ export class ApiClient {
       ...(init?.headers as Record<string, string> | undefined),
     };
     if (token) headers.Authorization = `Bearer ${token}`;
-    return fetch(`${this.baseUrl}${path}`, { ...init, headers });
+    return fetch(`${this.baseUrl}${path}`, { ...init, headers, credentials: "include" });
   }
 
   /** يجدّد الجلسة مرة واحدة مهما تزامنت الطلبات الفاشلة (single-flight). */
   private tryRefresh(): Promise<boolean> {
     if (!this.refreshInFlight) {
       this.refreshInFlight = (async () => {
-        const refreshToken = this.getRefreshToken?.();
-        if (!refreshToken) return false;
         try {
           const res = await fetch(`${this.baseUrl}/auth/refresh`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken }),
+            credentials: "include", // يرفق كوكي رمز التحديث تلقائيًا
           });
           if (!res.ok) return false;
           const auth = (await res.json()) as AuthResponse;
@@ -165,18 +163,13 @@ export class ApiClient {
     });
   }
 
-  refresh(refreshToken: string) {
-    return this.request<AuthResponse>("/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken }),
-    });
+  /** يستعيد الجلسة من كوكي رمز التحديث (مثلًا بعد إعادة تحميل الصفحة). */
+  refresh() {
+    return this.request<AuthResponse>("/auth/refresh", { method: "POST" });
   }
 
-  logout(refreshToken: string) {
-    return this.request<void>("/auth/logout", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken }),
-    });
+  logout() {
+    return this.request<void>("/auth/logout", { method: "POST" });
   }
 
   me() {
@@ -283,10 +276,11 @@ export class ApiClient {
     return this.request<MistakeItem[]>("/mistakes/due");
   }
 
-  reviewMistake(mistakeId: string, correct: boolean) {
-    return this.request<{ newState: string }>(`/mistakes/${mistakeId}/review`, {
+  /** الخادم يصحّح الإجابة بنفسه (نفس آلية الاختبارات) ويعيد "correct" الفعلية. */
+  reviewMistake(mistakeId: string, answer: AnswerPayload) {
+    return this.request<{ newState: string; correct: boolean }>(`/mistakes/${mistakeId}/review`, {
       method: "POST",
-      body: JSON.stringify({ correct }),
+      body: JSON.stringify({ answer }),
     });
   }
 
@@ -494,5 +488,46 @@ export class ApiClient {
   }
   parentChildren() {
     return this.request<ChildProgress[]>("/parent/children");
+  }
+
+  // --- تفعيل البريد ---
+
+  verifyEmail(token: string) {
+    return this.request<{ verified: true }>("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+  resendVerification() {
+    return this.request<void>("/auth/resend-verification", { method: "POST" });
+  }
+
+  // --- هوية الموقع ---
+
+  /** لا تتطلب مصادقة — الاسم/الشعار/روابط التواصل لكل صفحات الواجهة الأمامية. */
+  getSiteSettings() {
+    return this.request<PublicSiteSettings>("/settings");
+  }
+
+  adminGetSiteSettings() {
+    return this.request<AdminSiteSettings>("/admin/settings");
+  }
+  adminUpdateSiteSettings(input: UpdateSiteSettingsInput) {
+    return this.request<{ updated: true }>("/admin/settings", { method: "PUT", body: JSON.stringify(input) });
+  }
+  adminUploadLogo(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return this.request<{ url: string }>("/admin/settings/logo", { method: "POST", body: form });
+  }
+  adminUploadFavicon(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return this.request<{ url: string }>("/admin/settings/favicon", { method: "POST", body: form });
+  }
+
+  /** رابط بدء تسجيل الدخول عبر مزوّد خارجي — يُستخدم كـ href مباشر (تنقّل متصفح، لا fetch). */
+  oauthStartUrl(provider: "google" | "facebook") {
+    return `${this.baseUrl}/auth/oauth/${provider}`;
   }
 }

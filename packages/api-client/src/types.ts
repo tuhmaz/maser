@@ -16,11 +16,14 @@ export interface User {
   displayName: string;
   role: Role;
   onboardingCompleted: boolean;
+  emailVerified: boolean;
 }
 
 export interface AuthResponse {
   accessToken: string;
-  refreshToken: string;
+  // لا يوجد refreshToken هنا عمدًا: يصل الآن عبر كوكي HttpOnly لا تراها
+  // جافاسكربت إطلاقًا (كان يُعاد سابقًا هنا ويُخزَّن في localStorage، ما يعرّضه
+  // لأي ثغرة XSS في أي مكان بالتطبيق — راجع docs/security-requirements.md).
   user: User;
 }
 
@@ -265,6 +268,57 @@ export interface QuestionMedia {
   url: string;
 }
 
+// --- هوية الموقع (docs/deployment-plan.md، طلب المستخدم: اسم/شعار/تواصل اجتماعي) ---
+
+export interface OAuthProviders {
+  google: boolean;
+  facebook: boolean;
+}
+
+export interface PublicSiteSettings {
+  siteName: string;
+  tagline?: string;
+  logoUrl?: string;
+  faviconUrl?: string;
+  contactEmail?: string;
+  supportEmail?: string;
+  socialFacebook?: string;
+  socialTwitter?: string;
+  socialInstagram?: string;
+  socialYoutube?: string;
+  socialWhatsapp?: string;
+  oauthProviders: OAuthProviders;
+}
+
+export interface AdminSiteSettings extends PublicSiteSettings {
+  smtpEnabled: boolean;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPassSet: boolean;
+  smtpFromName?: string;
+  smtpFromEmail?: string;
+}
+
+export interface UpdateSiteSettingsInput {
+  siteName?: string;
+  tagline?: string;
+  contactEmail?: string;
+  supportEmail?: string;
+  socialFacebook?: string;
+  socialTwitter?: string;
+  socialInstagram?: string;
+  socialYoutube?: string;
+  socialWhatsapp?: string;
+  smtpEnabled?: boolean;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpFromName?: string;
+  smtpFromEmail?: string;
+}
+
 // --- المنهاج (تكملة) ---
 
 export interface LessonQuizRef {
@@ -415,4 +469,7 @@ export interface MistakeItem {
   mistakeCount: number;
   state: string;
   nextReviewAt?: string;
+  /** السؤال كاملًا (خيارات بلا كشف الصحيح) لعرض إجابة حقيقية قابلة للتصحيح
+   *  داخل الخادم — بدل تقييم الطالب لنفسه بصدق مفترَض. */
+  question?: SanitizedQuestion;
 }
