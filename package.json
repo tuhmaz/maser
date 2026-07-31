@@ -3,14 +3,16 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "e2e"
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:admin": "npm run dev --workspace=apps/admin",
     "build:web": "npm run build --workspace=apps/web",
     "build:admin": "npm run build --workspace=apps/admin",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "e2e": "npm run test --workspace=e2e"
   },
   "engines": {
     "node": ">=20"
