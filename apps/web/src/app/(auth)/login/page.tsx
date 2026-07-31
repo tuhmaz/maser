@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, LockKeyhole, Mail } from "lucide-react";
 import { loginSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
-import { api, setTokens } from "@/lib/api";
+import { api, applySession } from "@/lib/api";
 import { AuthExperiencePanel } from "@/components/AuthExperiencePanel";
 import { BrandMark } from "@/components/BrandMark";
+import { OAuthButtons } from "@/components/OAuthButtons";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const result = await api.login(parsed.data);
-      setTokens(result);
+      applySession(result);
       router.push(result.user.onboardingCompleted ? "/dashboard" : "/onboarding");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر تسجيل الدخول");
@@ -39,7 +40,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="auth-shell">
+    <main dir="rtl" className="auth-shell">
       <AuthExperiencePanel />
       <section className="auth-panel">
         <div className="w-full max-w-md">
@@ -91,6 +92,8 @@ export default function LoginPage() {
               {!loading && <ArrowLeft size={18} aria-hidden="true" />}
             </Button>
           </form>
+
+          <OAuthButtons />
 
           <p className="mt-6 text-center text-sm text-slate-600">
             ليس لديك حساب؟{" "}

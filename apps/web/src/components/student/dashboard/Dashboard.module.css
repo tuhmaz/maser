@@ -1,0 +1,747 @@
+.dashboard {
+  display: grid;
+  gap: 20px;
+  color: var(--foreground);
+}
+
+.pageHeader,
+.panelHeader,
+.metric,
+.taskRow,
+.progressRow,
+.panelRow,
+.subjectTop,
+.subjectBottom {
+  display: flex;
+  align-items: center;
+}
+
+.pageHeader {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.eyebrow {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.title {
+  margin-top: 4px;
+  color: var(--foreground);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.copy,
+.panelCopy,
+.taskMeta,
+.metricHelper,
+.subjectLabel,
+.panelRowMeta,
+.recommendationText {
+  color: var(--muted);
+}
+
+.copy {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.button,
+.taskButton,
+.recommendationButton,
+.wideButton {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 900;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 14px;
+  color: var(--foreground);
+}
+
+.button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.button:disabled,
+.taskButton:disabled,
+.recommendationButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.alert {
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  padding: 12px 14px;
+  color: color-mix(in srgb, var(--amber) 68%, var(--foreground));
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.error {
+  border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+  background: color-mix(in srgb, var(--coral) 10%, var(--surface));
+  color: var(--coral);
+}
+
+.surface {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px var(--shadow-color);
+}
+
+.heroGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+}
+
+.panelHeader {
+  min-height: 72px;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px;
+}
+
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.panelTitle svg,
+.sectionLink,
+.panelLink {
+  color: var(--primary);
+}
+
+.panelCopy {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.chip {
+  display: inline-flex;
+  min-height: 25px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  padding: 4px 9px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.taskList,
+.panelList,
+.progressList {
+  divide: none;
+}
+
+.taskRow {
+  min-height: 62px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+}
+
+.taskRow:last-child,
+.panelRow:last-child {
+  border-bottom: 0;
+}
+
+.taskIcon,
+.metricIcon,
+.subjectIcon,
+.panelIcon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.taskIcon {
+  width: 36px;
+  height: 36px;
+}
+
+.taskContent {
+  min-width: 0;
+  flex: 1;
+}
+
+.taskTitle,
+.subjectTitle,
+.panelRowTitle,
+.recommendationTitle {
+  color: var(--foreground);
+  font-weight: 900;
+}
+
+.taskTitle {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskMeta {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskButton {
+  min-height: 36px;
+  background: var(--navy);
+  padding: 0 12px;
+  color: #fff;
+}
+
+.planFooter {
+  background: var(--surface-subtle);
+  padding: 12px 18px 16px;
+}
+
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.progressTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--teal);
+  transition: width 400ms ease;
+}
+
+.emptyPlan {
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.emptyPlan h3 {
+  margin-top: 14px;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.emptyPlan p {
+  max-width: 340px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.recommendation {
+  display: grid;
+  min-height: 390px;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+}
+
+.recommendationVisual {
+  position: relative;
+  min-height: 100%;
+  background: #eef7fc;
+}
+
+.recommendationVisual img {
+  object-fit: cover;
+  object-position: left bottom;
+}
+
+.recommendationContent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 28px;
+}
+
+.recommendationLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.recommendationTitle {
+  margin-top: 12px;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+.recommendationText {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.recommendationButton {
+  margin-top: 18px;
+  background: var(--teal);
+  padding: 0 15px;
+  color: #fff;
+}
+
+.metricGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metric {
+  min-width: 0;
+  min-height: 108px;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+  box-shadow: 0 6px 18px var(--shadow-color);
+}
+
+.metricIcon {
+  width: 40px;
+  height: 40px;
+}
+
+.metricContent {
+  min-width: 0;
+}
+
+.metricLabel,
+.metricHelper {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricLabel {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.metricValue {
+  margin-top: 4px;
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.metricHelper {
+  margin-top: 4px;
+  font-size: 8px;
+}
+
+.learningGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+}
+
+.sectionBody {
+  padding: 18px;
+}
+
+.sectionTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sectionTitle {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sectionLink,
+.panelLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.subjectGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.subjectCard {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 14px;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.subjectCard:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+}
+
+.subjectTop,
+.subjectBottom {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.subjectIcon {
+  width: 36px;
+  height: 36px;
+}
+
+.subjectTitle {
+  overflow: hidden;
+  margin-top: 14px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subjectBottom {
+  align-items: end;
+  margin-top: 16px;
+}
+
+.subjectValue {
+  font-size: 23px;
+  font-weight: 900;
+}
+
+.subjectLabel {
+  margin-top: 4px;
+  font-size: 8px;
+}
+
+.miniRing {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  padding: 4px;
+}
+
+.miniRing span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--surface-subtle);
+}
+
+.summaryBody {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 24px 18px;
+}
+
+.summaryRing {
+  position: relative;
+  display: flex;
+  width: 112px;
+  height: 112px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.summaryRingInner {
+  display: flex;
+  width: 82px;
+  height: 82px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.summaryRingInner strong {
+  color: var(--foreground);
+  font-size: 23px;
+}
+
+.summaryRingInner small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.progressList {
+  min-width: 0;
+  flex: 1;
+}
+
+.progressRow {
+  min-height: 34px;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.progressRow:last-child {
+  border-bottom: 0;
+}
+
+.progressRow dd {
+  color: var(--foreground);
+  font-weight: 900;
+}
+
+.lowerGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compactHeader {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+}
+
+.compactTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.compactTitle svg {
+  color: var(--primary);
+}
+
+.panelRow {
+  min-height: 62px;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+}
+
+.panelRowTitle {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelRowMeta {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.achievement {
+  display: flex;
+  min-height: 176px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.achievement .panelIcon {
+  width: 62px;
+  height: 62px;
+}
+
+.achievement h3 {
+  margin-top: 12px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.achievement p,
+.nextAction p,
+.emptyMessage {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.7;
+}
+
+.nextAction {
+  padding: 18px;
+}
+
+.nextAction h3 {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.7;
+}
+
+.wideButton {
+  width: 100%;
+  margin-top: 16px;
+  background: var(--navy);
+  padding: 0 14px;
+  color: #fff;
+}
+
+.emptyMessage {
+  padding: 24px;
+  text-align: center;
+}
+
+.skeleton {
+  min-height: 120px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  animation: pulse 1.2s ease-in-out infinite alternate;
+}
+
+.blue { background: #eaf2ff; color: #2874d8; }
+.green { background: #e7f8f0; color: #16a36f; }
+.orange { background: #fff2e7; color: #ef8b38; }
+.teal { background: #e5f7f5; color: #087f83; }
+.amber { background: #fff4df; color: #c57811; }
+.coral { background: #fff0ed; color: #d45d4f; }
+.violet { background: #f0edff; color: #6a55c6; }
+
+:global(:root[data-theme="dark"]) .blue { background: #162a4b; color: #8ab2ff; }
+:global(:root[data-theme="dark"]) .green { background: #12372d; color: #5bd4a4; }
+:global(:root[data-theme="dark"]) .orange { background: #3c291a; color: #ffb36f; }
+:global(:root[data-theme="dark"]) .teal { background: #123638; color: #5bd4d0; }
+:global(:root[data-theme="dark"]) .amber { background: #3b301c; color: #f5c45b; }
+:global(:root[data-theme="dark"]) .coral { background: #402524; color: #ff9b8f; }
+:global(:root[data-theme="dark"]) .violet { background: #2a2345; color: #beaaff; }
+:global(:root[data-theme="dark"]) .recommendationVisual { background: #0d2435; filter: brightness(0.82); }
+
+@keyframes pulse {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 1180px) {
+  .heroGrid,
+  .learningGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .recommendation {
+    min-height: 320px;
+  }
+}
+
+@media (max-width: 820px) {
+  .pageHeader {
+    align-items: flex-start;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+
+  .metricGrid,
+  .subjectGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lowerGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .pageHeader {
+    flex-direction: column;
+  }
+
+  .recommendation {
+    grid-template-columns: 1fr;
+  }
+
+  .recommendationVisual {
+    min-height: 210px;
+  }
+
+  .recommendationContent {
+    padding: 22px;
+  }
+
+  .summaryBody {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .summaryRing {
+    margin: 0 auto;
+  }
+}
+

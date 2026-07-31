@@ -3,23 +3,21 @@
 @tailwind utilities;
 
 :root {
-  --background: #f5f7f6;
-  --foreground: #111827;
-  --surface: #ffffff;
-  --border: #dbe4df;
-  --teal: #0f766e;
+  --admin-bg: #f4f7fb;
+  --admin-ink: #12213f;
+  --admin-muted: #64718a;
+  --admin-border: #dfe6f1;
+  --admin-blue: #1565d8;
+  --admin-blue-dark: #062b66;
+  --admin-navy: #031f4b;
+  --admin-cyan: #0bb7c4;
+  --admin-green: #159b72;
+  --admin-amber: #d98b17;
+  --admin-red: #d64f5b;
 }
 
 * {
   box-sizing: border-box;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif;
-  width: 100%;
-  overflow-x: hidden;
 }
 
 html {
@@ -28,26 +26,142 @@ html {
   direction: ltr;
 }
 
+body {
+  width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;
+  color: var(--admin-ink);
+  background: var(--admin-bg);
+  font-family: Tahoma, "Segoe UI", Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(21, 101, 216, 0.25);
+  outline-offset: 2px;
+}
+
 @layer base {
-  input,
+  input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
-    @apply rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100;
+    @apply min-h-11 rounded-lg border bg-white px-3 py-2 text-sm text-slate-950 outline-none transition;
+    border-color: var(--admin-border);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--admin-blue);
+    box-shadow: 0 0 0 4px rgba(21, 101, 216, 0.09);
+  }
+
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
   }
 }
 
 @layer components {
   .admin-surface {
-    @apply rounded-md border border-slate-200 bg-white shadow-sm shadow-slate-200/50;
+    @apply rounded-lg border bg-white;
     min-width: 0;
     max-width: 100%;
+    border-color: var(--admin-border);
+    box-shadow: 0 8px 24px rgba(22, 43, 82, 0.055);
+  }
+
+  .admin-page-header {
+    @apply flex flex-wrap items-end justify-between gap-4;
+  }
+
+  .admin-page-title {
+    @apply mt-1 text-2xl font-black leading-tight text-[#12213f] sm:text-3xl;
+  }
+
+  .admin-page-copy {
+    @apply mt-2 max-w-3xl text-sm leading-7 text-[#64718a];
   }
 
   .admin-eyebrow {
-    @apply text-xs font-bold uppercase text-teal-700;
+    @apply text-xs font-black text-[#1565d8];
   }
 
   .admin-empty {
-    @apply rounded-md border border-dashed border-slate-300 bg-white/80 p-5 text-sm leading-7 text-slate-500;
+    @apply rounded-lg border border-dashed bg-white p-7 text-center text-sm leading-7 text-[#64718a];
+    border-color: #cfd9e8;
+  }
+
+  .admin-stat {
+    @apply rounded-lg border bg-white p-4 sm:p-5;
+    border-color: var(--admin-border);
+    box-shadow: 0 7px 20px rgba(22, 43, 82, 0.05);
+  }
+
+  .admin-chip {
+    @apply inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold;
+  }
+
+  .admin-table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+
+  .admin-table {
+    @apply w-full min-w-[720px] text-right text-sm;
+  }
+
+  .admin-table thead {
+    @apply bg-[#f7f9fc] text-xs text-[#64718a];
+  }
+
+  .admin-table th {
+    @apply whitespace-nowrap px-4 py-3 font-black;
+  }
+
+  .admin-table td {
+    @apply px-4 py-3.5 align-middle;
+  }
+
+  .admin-table tbody tr {
+    @apply transition hover:bg-[#f8faff];
+  }
+
+  .admin-divider-list > * + * {
+    border-top: 1px solid #edf1f6;
+  }
+
+  .admin-progress {
+    @apply h-2 overflow-hidden rounded-full bg-[#e9eef6];
+  }
+
+  .admin-progress > span {
+    @apply block h-full rounded-full bg-[#1565d8] transition-all;
+  }
+
+  .admin-error {
+    @apply rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700;
+  }
+
+  .admin-loading {
+    @apply animate-pulse rounded-lg bg-[#edf1f7];
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BookOpen, Pencil, Plus, RefreshCw, Save, X } from "lucide-react";
 import type { AdminLesson, AdminUnit, Grade, Subject } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
 
-// إدارة الدروس — docs/database-design.md: جدول lessons.
 export default function LessonsPage() {
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [gradeId, setGradeId] = useState("");
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [subjectId, setSubjectId] = useState("");
   const [units, setUnits] = useState<AdminUnit[]>([]);
@@ -15,147 +18,176 @@ export default function LessonsPage() {
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [order, setOrder] = useState(1);
-  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AdminLesson | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listGrades().then((gs: Grade[]) => {
-      if (gs[0]) api.listSubjectsForGrade(gs[0].id).then((ss) => {
-        setSubjects(ss);
-        if (ss[0]) setSubjectId(ss[0].id);
-      });
-    });
+    api.listGrades().then((items) => {
+      setGrades(items);
+      setGradeId(items[0]?.id ?? "");
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب الصفوف"));
   }, []);
 
   useEffect(() => {
-    if (!subjectId) return;
-    api.adminListUnits(subjectId).then((us) => {
-      setUnits(us);
-      if (us[0]) setUnitId(us[0].id);
-    });
+    if (!gradeId) return;
+    api.listSubjectsForGrade(gradeId).then((items) => {
+      setSubjects(items);
+      setSubjectId(items[0]?.id ?? "");
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب المواد"));
+  }, [gradeId]);
+
+  useEffect(() => {
+    if (!subjectId) {
+      setUnits([]);
+      setUnitId("");
+      return;
+    }
+    api.adminListUnits(subjectId).then((items) => {
+      setUnits(items);
+      setUnitId(items[0]?.id ?? "");
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب الوحدات"));
   }, [subjectId]);
 
-  function loadLessons(uid: string) {
-    if (!uid) return setLessons([]);
-    api.adminListLessons(uid).then(setLessons).catch(() => setLessons([]));
+  function loadLessons(selectedUnitId = unitId) {
+    if (!selectedUnitId) {
+      setLessons([]);
+      return;
+    }
+    api.adminListLessons(selectedUnitId).then((items) => {
+      setLessons(items);
+      setOrder(items.length + 1);
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب الدروس"));
   }
+  useEffect(() => { loadLessons(unitId); }, [unitId]);
 
-  useEffect(() => loadLessons(unitId), [unitId]);
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    if (!unitId || !name.trim()) return;
+    setSaving(true);
     setError(null);
     try {
-      await api.adminCreateLesson({ unitId, name, summary, order });
+      await api.adminCreateLesson({ unitId, name: name.trim(), summary: summary.trim() || undefined, order });
       setName("");
       setSummary("");
-      loadLessons(unitId);
+      setShowForm(false);
+      loadLessons();
     } catch (err: any) {
       setError(err?.message ?? "تعذّر إنشاء الدرس");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function handleSaveEdit() {
+  async function saveEdit() {
     if (!editing) return;
+    setSaving(true);
     setError(null);
     try {
       await api.adminUpdateLesson(editing.id, {
-        name: editing.name, summary: editing.summary, order: editing.order, isActive: editing.isActive,
+        name: editing.name.trim(),
+        summary: editing.summary?.trim() ?? "",
+        order: editing.order,
+        isActive: editing.isActive,
       });
       setEditing(null);
-      loadLessons(unitId);
+      loadLessons();
     } catch (err: any) {
-      setError(err?.message ?? "تعذّر حفظ التعديل");
+      setError(err?.message ?? "تعذّر حفظ الدرس");
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="admin-eyebrow">المنهاج</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">الدروس</h1>
-      </header>
+      <AdminPageHeader
+        eyebrow="هيكل المنهاج"
+        title="الدروس"
+        description="إدارة الدروس وترتيبها وحالتها داخل الوحدة المحددة."
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => loadLessons()} disabled={!unitId}><RefreshCw size={17} /> تحديث</Button>
+            <Button onClick={() => setShowForm((value) => !value)} disabled={!unitId}><Plus size={17} /> درس جديد</Button>
+          </>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-semibold text-slate-600">المادة:</label>
-        <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="min-w-[10rem]">
-          {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <label className="text-sm font-semibold text-slate-600">الوحدة:</label>
-        <select value={unitId} onChange={(e) => setUnitId(e.target.value)} className="min-w-[10rem]">
-          {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-      </div>
+      {error && <p role="alert" className="admin-error">{error}</p>}
 
-      <form onSubmit={handleCreate} className="admin-surface flex flex-wrap items-end gap-3 p-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500">اسم الدرس</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} required className="w-64" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500">وصف مختصر</label>
-          <input value={summary} onChange={(e) => setSummary(e.target.value)} className="w-72" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500">الترتيب</label>
-          <input type="number" value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-20" />
-        </div>
-        <Button type="submit" disabled={!unitId}>إضافة درس</Button>
-      </form>
+      <section className="admin-surface grid gap-4 p-4 sm:grid-cols-3">
+        <FilterSelect id="lesson-grade" label="الصف" value={gradeId} onChange={setGradeId} items={grades} />
+        <FilterSelect id="lesson-subject" label="المادة" value={subjectId} onChange={setSubjectId} items={subjects} />
+        <FilterSelect id="lesson-unit" label="الوحدة" value={unitId} onChange={setUnitId} items={units} />
+      </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {showForm && (
+        <form onSubmit={create} className="admin-surface grid gap-4 p-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_120px_auto] lg:items-end">
+          <div><label htmlFor="lesson-name" className="mb-2 block text-xs font-black text-[#526078]">اسم الدرس</label><input id="lesson-name" className="w-full" value={name} onChange={(event) => setName(event.target.value)} required /></div>
+          <div><label htmlFor="lesson-summary" className="mb-2 block text-xs font-black text-[#526078]">وصف مختصر</label><input id="lesson-summary" className="w-full" value={summary} onChange={(event) => setSummary(event.target.value)} /></div>
+          <div><label htmlFor="lesson-order" className="mb-2 block text-xs font-black text-[#526078]">الترتيب</label><input id="lesson-order" className="w-full" type="number" min={1} value={order} onChange={(event) => setOrder(Number(event.target.value))} /></div>
+          <Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ..." : "حفظ الدرس"}</Button>
+        </form>
+      )}
 
-      <div className="admin-surface overflow-hidden">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">الاسم</th>
-              <th className="px-4 py-3 font-bold">الوصف</th>
-              <th className="px-4 py-3 font-bold">الترتيب</th>
-              <th className="px-4 py-3 font-bold">الحالة</th>
-              <th className="px-4 py-3 font-bold"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {lessons.map((l) => (
-              <tr key={l.id}>
-                {editing?.id === l.id ? (
-                  <>
-                    <td className="px-4 py-2"><input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></td>
-                    <td className="px-4 py-2"><input value={editing.summary ?? ""} onChange={(e) => setEditing({ ...editing, summary: e.target.value })} /></td>
-                    <td className="px-4 py-2"><input type="number" className="w-16" value={editing.order} onChange={(e) => setEditing({ ...editing, order: Number(e.target.value) })} /></td>
-                    <td className="px-4 py-2">
-                      <label className="flex items-center gap-2 text-xs">
-                        <input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} />
-                        نشط
-                      </label>
-                    </td>
-                    <td className="flex gap-2 px-4 py-2">
-                      <Button onClick={handleSaveEdit}>حفظ</Button>
-                      <Button variant="secondary" onClick={() => setEditing(null)}>إلغاء</Button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="px-4 py-3 font-semibold text-slate-950">{l.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{l.summary || "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{l.order}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-md px-2 py-1 text-xs font-bold ${l.isActive ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-500"}`}>
-                        {l.isActive ? "نشط" : "معطّل"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Button variant="secondary" onClick={() => setEditing(l)}>تعديل</Button>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {lessons.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد دروس في هذه الوحدة بعد.</p>}
-      </div>
+      {lessons.length === 0 ? (
+        <AdminEmptyState title="لا توجد دروس في هذه الوحدة" icon={<BookOpen size={30} />} />
+      ) : (
+        <section className="admin-surface overflow-hidden">
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>الترتيب</th><th>الدرس</th><th>الوصف</th><th>الحالة</th><th>الإجراءات</th></tr></thead>
+              <tbody className="divide-y divide-[#edf1f6]">
+                {lessons.map((lesson) => (
+                  <tr key={lesson.id}>
+                    {editing?.id === lesson.id ? (
+                      <>
+                        <td><input type="number" min={1} className="w-20" value={editing.order} onChange={(event) => setEditing({ ...editing, order: Number(event.target.value) })} /></td>
+                        <td><input className="min-w-48" value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></td>
+                        <td><input className="min-w-64" value={editing.summary ?? ""} onChange={(event) => setEditing({ ...editing, summary: event.target.value })} /></td>
+                        <td><label className="flex items-center gap-2 text-xs font-bold text-[#526078]"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> نشط</label></td>
+                        <td><div className="flex gap-2"><Button onClick={() => void saveEdit()} disabled={saving}><Save size={16} /> حفظ</Button><Button variant="secondary" onClick={() => setEditing(null)}><X size={16} /> إلغاء</Button></div></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="font-black text-[#1565d8]">{lesson.order}</td>
+                        <td className="font-black text-[#12213f]">{lesson.name}</td>
+                        <td className="max-w-md text-sm leading-6 text-[#64718a]">{lesson.summary || "—"}</td>
+                        <td><AdminStatusBadge label={lesson.isActive ? "نشط" : "معطل"} tone={lesson.isActive ? "success" : "neutral"} /></td>
+                        <td><Button variant="secondary" onClick={() => setEditing({ ...lesson })}><Pencil size={16} /> تعديل</Button></td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  items,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  items: Array<{ id: string; name: string }>;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-2 block text-xs font-black text-[#526078]">{label}</label>
+      <select id={id} className="w-full" value={value} onChange={(event) => onChange(event.target.value)}>
+        {items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
     </div>
   );
 }

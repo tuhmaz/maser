@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, LockKeyhole, Mail, UserRound } from "lucide-react";
 import { registerSchema } from "@alemedu/validation";
 import { Button } from "@alemedu/ui";
-import { api, setTokens } from "@/lib/api";
+import { api, applySession } from "@/lib/api";
 import { AuthExperiencePanel } from "@/components/AuthExperiencePanel";
 import { BrandMark } from "@/components/BrandMark";
+import { OAuthButtons } from "@/components/OAuthButtons";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const result = await api.register(parsed.data);
-      setTokens(result);
+      applySession(result);
       router.push("/onboarding");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر إنشاء الحساب");
@@ -40,7 +41,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="auth-shell">
+    <main dir="rtl" className="auth-shell">
       <AuthExperiencePanel />
       <section className="auth-panel">
         <div className="w-full max-w-md">
@@ -69,6 +70,8 @@ export default function RegisterPage() {
               {!loading && <ArrowLeft size={18} aria-hidden="true" />}
             </Button>
           </form>
+
+          <OAuthButtons />
 
           <p className="mt-6 text-center text-sm text-slate-600">
             لديك حساب؟{" "}

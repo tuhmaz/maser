@@ -1,6 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
+import {
+  Archive,
+  CheckCircle2,
+  Database,
+  FileEdit,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Trash2,
+} from "lucide-react";
 import type {
   AdminLesson,
   AdminSkill,
@@ -8,73 +19,112 @@ import type {
   QuestionDetail,
   QuestionStatus,
   QuestionSummary,
+  ReportsOverview,
   SaveQuestionInput,
 } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { QuestionForm } from "@/components/QuestionForm";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
 
-// دورة حياة المحتوى (docs/question-model.md):
-// Draft → In Review → Changes Requested → Approved → Published → Archived
-const LIFECYCLE = ["Draft", "In Review", "Changes Requested", "Approved", "Published", "Archived"];
+const LIFECYCLE: Array<{ key: QuestionStatus; label: string }> = [
+  { key: "draft", label: "مسودة" },
+  { key: "in_review", label: "قيد المراجعة" },
+  { key: "changes_requested", label: "طلب تعديل" },
+  { key: "approved", label: "معتمد" },
+  { key: "published", label: "منشور" },
+  { key: "archived", label: "مؤرشف" },
+];
 
-const STATUS_LABELS: Record<QuestionStatus, string> = {
-  draft: "مسودة",
-  in_review: "قيد المراجعة",
-  changes_requested: "طُلب تعديل",
-  approved: "معتمد",
-  published: "منشور",
-  archived: "مؤرشف",
+const STATUS_LABELS: Record<QuestionStatus, string> = Object.fromEntries(
+  LIFECYCLE.map((item) => [item.key, item.label]),
+) as Record<QuestionStatus, string>;
+
+const STATUS_TONES: Record<QuestionStatus, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  draft: "neutral",
+  in_review: "warning",
+  changes_requested: "danger",
+  approved: "info",
+  published: "success",
+  archived: "neutral",
 };
-const STATUS_STYLES: Record<QuestionStatus, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  in_review: "bg-amber-100 text-amber-900",
-  changes_requested: "bg-orange-100 text-orange-900",
-  approved: "bg-blue-100 text-blue-900",
-  published: "bg-teal-100 text-teal-800",
-  archived: "bg-slate-200 text-slate-500",
-};
+
+const DIFFICULTY_LABELS = { easy: "سهل", medium: "متوسط", hard: "صعب" };
 
 export default function QuestionsPage() {
   const [items, setItems] = useState<QuestionSummary[]>([]);
+  const [overview, setOverview] = useState<ReportsOverview | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [lessons, setLessons] = useState<AdminLesson[]>([]);
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [skills, setSkills] = useState<AdminSkill[]>([]);
-  const [gradeId, setGradeId] = useState("");
+  const [gradeIdBySubject, setGradeIdBySubject] = useState<Record<string, string>>({});
   const [view, setView] = useState<"list" | "form">("list");
   const [editing, setEditing] = useState<QuestionDetail | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   function loadList() {
-    api.adminListQuestions({ status: statusFilter, q: search }).then(setItems).catch(() => setItems([]));
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      api.adminListQuestions({ status: statusFilter, q: deferredSearch }),
+      api.adminReportsOverview(),
+    ])
+      .then(([questionItems, report]) => {
+        setItems(questionItems);
+        setOverview(report);
+      })
+      .catch((err: any) => setError(err?.message ?? "تعذّر جلب بنك الأسئلة"))
+      .finally(() => setLoading(false));
   }
 
-  useEffect(loadList, [statusFilter, search]);
+  useEffect(loadList, [statusFilter, deferredSearch]);
 
   useEffect(() => {
-    api.adminListLessons().then(setLessons);
-    api.adminListSkills().then(setSkills);
-    api.listGrades().then((gs) => {
-      if (!gs[0]) return;
-      setGradeId(gs[0].id);
-      api.listSubjectsForGrade(gs[0].id).then((ss) => {
-        if (ss[0]) api.adminListUnits(ss[0].id).then(setUnits);
-      });
-    });
+    async function loadReferences() {
+      try {
+        const [lessonItems, skillItems, gradeItems] = await Promise.all([
+          api.adminListLessons(),
+          api.adminListSkills(),
+          api.listGrades(),
+        ]);
+        const allUnits: AdminUnit[] = [];
+        const gradeMap: Record<string, string> = {};
+        for (const grade of gradeItems) {
+          const subjects = await api.listSubjectsForGrade(grade.id);
+          for (const subject of subjects) {
+            gradeMap[subject.id] = grade.id;
+            allUnits.push(...await api.adminListUnits(subject.id));
+          }
+        }
+        setLessons(lessonItems);
+        setSkills(skillItems);
+        setUnits(allUnits);
+        setGradeIdBySubject(gradeMap);
+      } catch (err: any) {
+        setError(err?.message ?? "تعذّر جلب مراجع المنهاج");
+      }
+    }
+    void loadReferences();
   }, []);
 
-  function unitAndSubjectFor(lessonId: string) {
-    const lesson = lessons.find((l) => l.id === lessonId);
-    const unit = units.find((u) => u.id === lesson?.unitId);
-    return { unitId: unit?.id ?? "", subjectId: unit?.subjectId ?? "" };
+  function hierarchyForLesson(lessonId: string) {
+    const lesson = lessons.find((item) => item.id === lessonId);
+    const unit = units.find((item) => item.id === lesson?.unitId);
+    const subjectId = unit?.subjectId ?? "";
+    return { unitId: unit?.id ?? "", subjectId, gradeId: gradeIdBySubject[subjectId] ?? "" };
   }
 
   async function handleCreate(input: SaveQuestionInput) {
-    const { unitId, subjectId } = unitAndSubjectFor(input.lessonId!);
-    await api.adminCreateQuestion({ ...input, gradeId, subjectId, unitId });
+    const hierarchy = hierarchyForLesson(input.lessonId!);
+    if (!hierarchy.gradeId || !hierarchy.subjectId || !hierarchy.unitId) {
+      throw new Error("تعذّر تحديد الصف والمادة والوحدة من الدرس المحدد");
+    }
+    await api.adminCreateQuestion({ ...input, ...hierarchy });
     setView("list");
     loadList();
   }
@@ -88,17 +138,24 @@ export default function QuestionsPage() {
   }
 
   async function openEdit(id: string) {
+    setBusyId(id);
     setError(null);
     try {
-      const detail = await api.adminGetQuestion(id);
-      setEditing(detail);
+      setEditing(await api.adminGetQuestion(id));
       setView("form");
     } catch (err: any) {
       setError(err?.message ?? "تعذّر جلب السؤال");
+    } finally {
+      setBusyId(null);
     }
   }
 
-  async function runAction(id: string, action: () => Promise<unknown>) {
+  async function runAction(
+    id: string,
+    action: () => Promise<unknown>,
+    confirmation?: string,
+  ) {
+    if (confirmation && !window.confirm(confirmation)) return;
     setBusyId(id);
     setError(null);
     try {
@@ -114,16 +171,13 @@ export default function QuestionsPage() {
   if (view === "form") {
     return (
       <div className="space-y-5">
-        <header>
-          <p className="admin-eyebrow">بنك الأسئلة</p>
-          <h1 className="mt-2 text-3xl font-black text-slate-950">{editing ? "تعديل سؤال" : "سؤال جديد"}</h1>
-          {editing && editing.status !== "draft" && (
-            <p className="mt-2 text-sm text-amber-700">
-              هذا السؤال {editing.status === "published" ? "منشور" : "قيد المراجعة أو معتمد"} — الحفظ سينشئ إصدارًا
-              جديدًا ويعيده لحالة "مسودة" دون التأثير على نتائج الطلاب السابقة.
-            </p>
-          )}
-        </header>
+        <AdminPageHeader
+          eyebrow="بنك الأسئلة"
+          title={editing ? "تعديل السؤال" : "إنشاء سؤال"}
+          description={editing && editing.status !== "draft"
+            ? "حفظ التعديل ينشئ إصداراً جديداً ويعيد السؤال إلى المسودة دون تغيير نتائج الطلاب السابقة."
+            : "أدخل السؤال والحل والتفسير والمهارات المرتبطة ثم احفظه كمسودة."}
+        />
         <QuestionForm
           lessons={lessons}
           skills={skills}
@@ -135,99 +189,136 @@ export default function QuestionsPage() {
     );
   }
 
+  const totalQuestions = Object.values(overview?.questionsByStatus ?? {}).reduce((sum, count) => sum + count, 0);
+
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="admin-eyebrow">بنك الأسئلة</p>
-          <h1 className="mt-2 text-3xl font-black text-slate-950">دورة حياة السؤال</h1>
-          <p className="mt-2 max-w-3xl leading-7 text-slate-600">
-            لا يغيّر السؤال المنشور نتائج قديمة؛ أي تعديل تعليمي بعد النشر ينشئ إصدارًا جديدًا.
-          </p>
-        </div>
-        <Button onClick={() => { setEditing(undefined); setView("form"); }}>+ سؤال جديد</Button>
-      </header>
+      <AdminPageHeader
+        eyebrow="إدارة المحتوى"
+        title="بنك الأسئلة"
+        description="دورة كاملة من المسودة إلى المراجعة والاعتماد والنشر مع حفظ إصدارات المحتوى."
+        actions={
+          <>
+            <Button variant="secondary" onClick={loadList} disabled={loading}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /> تحديث</Button>
+            <Button onClick={() => { setEditing(undefined); setView("form"); }}><Plus size={17} /> سؤال جديد</Button>
+          </>
+        }
+      />
 
-      <div className="flex flex-wrap gap-2 text-xs font-bold">
-        {LIFECYCLE.map((s, i) => (
-          <span key={s} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-700">
-            {i + 1}. {s}
-          </span>
+      {error && <p role="alert" className="admin-error">{error}</p>}
+
+      <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {LIFECYCLE.map((status, index) => (
+          <button
+            key={status.key}
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === status.key ? "" : status.key)}
+            className={`admin-stat text-right transition ${statusFilter === status.key ? "border-[#1565d8] ring-2 ring-[#1565d8]/10" : ""}`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-[#9aa6b8]">0{index + 1}</span>
+              <AdminStatusBadge label={status.label} tone={STATUS_TONES[status.key]} />
+            </div>
+            <p className="mt-3 text-2xl font-black text-[#12213f]">
+              {(overview?.questionsByStatus[status.key] ?? 0).toLocaleString("ar")}
+            </p>
+          </button>
         ))}
-      </div>
+      </section>
 
-      <div className="flex flex-wrap gap-3">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="min-w-[10rem]">
-          <option value="">كل الحالات</option>
-          {Object.entries(STATUS_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      <section className="admin-surface flex flex-col gap-3 p-4 md:flex-row md:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8d99ad]" size={17} />
+          <input className="w-full pr-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="بحث في نص السؤال..." />
+        </div>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="min-w-48">
+          <option value="">كل الحالات ({totalQuestions})</option>
+          {LIFECYCLE.map((status) => <option key={status.key} value={status.key}>{status.label}</option>)}
         </select>
-        <input placeholder="بحث في نص السؤال..." value={search} onChange={(e) => setSearch(e.target.value)} className="min-w-[16rem]" />
-      </div>
+      </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      <div className="admin-surface overflow-hidden">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">السؤال</th>
-              <th className="px-4 py-3 font-bold">الدرس</th>
-              <th className="px-4 py-3 font-bold">الحالة</th>
-              <th className="px-4 py-3 font-bold">الاستخدام</th>
-              <th className="px-4 py-3 font-bold">نسبة الخطأ</th>
-              <th className="px-4 py-3 font-bold">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((q) => (
-              <tr key={q.id}>
-                <td className="max-w-xs truncate px-4 py-3 font-semibold text-slate-950">{q.body}</td>
-                <td className="px-4 py-3 text-slate-600">{q.lessonName}</td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-md px-2 py-1 text-xs font-bold ${STATUS_STYLES[q.status]}`}>
-                    {STATUS_LABELS[q.status]}
-                  </span>
-                  {q.openReports > 0 && (
-                    <span className="mr-2 rounded-md bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
-                      {q.openReports} بلاغ
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-slate-600">{q.usageCount}</td>
-                <td className="px-4 py-3 text-slate-600">
-                  {q.errorRate === null ? "—" : `${Math.round(q.errorRate * 100)}%`}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button variant="secondary" onClick={() => openEdit(q.id)} disabled={busyId === q.id}>تعديل</Button>
-                    {(q.status === "draft" || q.status === "changes_requested") && (
-                      <Button onClick={() => runAction(q.id, () => api.adminSubmitForReview(q.id))} disabled={busyId === q.id}>
-                        إرسال للمراجعة
-                      </Button>
-                    )}
-                    {q.status === "approved" && (
-                      <Button onClick={() => runAction(q.id, () => api.adminPublishQuestion(q.id))} disabled={busyId === q.id}>
-                        نشر
-                      </Button>
-                    )}
-                    {q.status !== "archived" && (
-                      <Button variant="danger" onClick={() => runAction(q.id, () => api.adminArchiveQuestion(q.id))} disabled={busyId === q.id}>
-                        أرشفة
-                      </Button>
-                    )}
-                    {q.status === "draft" && (
-                      <Button variant="danger" onClick={() => runAction(q.id, () => api.adminDeleteQuestion(q.id))} disabled={busyId === q.id}>
-                        حذف
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {items.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد أسئلة مطابقة.</p>}
-      </div>
+      <section className="admin-surface overflow-hidden">
+        <div className="admin-table-wrap">
+          <table className="admin-table min-w-[1050px]">
+            <thead>
+              <tr><th>السؤال</th><th>الدرس</th><th>الصعوبة</th><th>الحالة</th><th>الاستخدام</th><th>نسبة الخطأ</th><th>البلاغات</th><th>الإجراءات</th></tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf1f6]">
+              {items.map((question) => (
+                <tr key={question.id}>
+                  <td className="max-w-80">
+                    <p className="truncate font-black text-[#12213f]" title={question.body}>{question.body}</p>
+                    <p className="mt-1 text-[10px] text-[#9aa6b8]">{question.type}</p>
+                  </td>
+                  <td className="max-w-44 truncate text-[#526078]">{question.lessonName || "غير مرتبط"}</td>
+                  <td><AdminStatusBadge label={DIFFICULTY_LABELS[question.difficulty]} tone={question.difficulty === "hard" ? "danger" : question.difficulty === "medium" ? "warning" : "success"} /></td>
+                  <td><AdminStatusBadge label={STATUS_LABELS[question.status]} tone={STATUS_TONES[question.status]} /></td>
+                  <td className="font-bold text-[#526078]">{question.usageCount.toLocaleString("ar")}</td>
+                  <td className={question.errorRate !== null && question.errorRate >= 0.7 ? "font-black text-[#d64f5b]" : "text-[#526078]"}>
+                    {question.errorRate === null ? "غير متاحة" : `${Math.round(question.errorRate * 100)}%`}
+                  </td>
+                  <td>
+                    {question.openReports > 0
+                      ? <AdminStatusBadge label={`${question.openReports} بلاغ`} tone="danger" />
+                      : <span className="text-[#9aa6b8]">0</span>}
+                  </td>
+                  <td>
+                    <div className="flex min-w-max gap-1.5">
+                      <IconButton label="تعديل" onClick={() => void openEdit(question.id)} disabled={busyId === question.id}><FileEdit size={16} /></IconButton>
+                      {(question.status === "draft" || question.status === "changes_requested") && (
+                        <IconButton label="إرسال للمراجعة" onClick={() => void runAction(question.id, () => api.adminSubmitForReview(question.id))} disabled={busyId === question.id}><Send size={16} /></IconButton>
+                      )}
+                      {question.status === "approved" && (
+                        <IconButton label="نشر" tone="success" onClick={() => void runAction(question.id, () => api.adminPublishQuestion(question.id), "نشر هذا السؤال سيجعله متاحاً في اختبارات الطلاب. هل تريد المتابعة؟")} disabled={busyId === question.id}><CheckCircle2 size={16} /></IconButton>
+                      )}
+                      {question.status !== "archived" && (
+                        <IconButton label="أرشفة" tone="warning" onClick={() => void runAction(question.id, () => api.adminArchiveQuestion(question.id), "سيتم إيقاف استخدام هذا السؤال في المحاولات الجديدة. هل تريد أرشفته؟")} disabled={busyId === question.id}><Archive size={16} /></IconButton>
+                      )}
+                      {question.status === "draft" && (
+                        <IconButton label="حذف المسودة" tone="danger" onClick={() => void runAction(question.id, () => api.adminDeleteQuestion(question.id), "حذف المسودة نهائي ولا يمكن التراجع عنه. هل تريد المتابعة؟")} disabled={busyId === question.id}><Trash2 size={16} /></IconButton>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!loading && items.length === 0 && <div className="p-5"><AdminEmptyState title="لا توجد أسئلة مطابقة" description="غيّر الفلاتر أو أنشئ سؤالاً جديداً." icon={<Database size={30} />} /></div>}
+      </section>
     </div>
+  );
+}
+
+function IconButton({
+  label,
+  children,
+  onClick,
+  disabled,
+  tone = "default",
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const styles = {
+    default: "border-[#dfe6f1] text-[#526078] hover:border-[#9eb7dc] hover:text-[#1565d8]",
+    success: "border-[#bde5d8] text-[#159b72] hover:bg-[#e8f7f2]",
+    warning: "border-[#f1d8af] text-[#b86f08] hover:bg-[#fff4e5]",
+    danger: "border-[#efc6ca] text-[#d64f5b] hover:bg-[#ffeded]",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg border bg-white transition disabled:cursor-not-allowed disabled:opacity-50 ${styles[tone]}`}
+      title={label}
+      aria-label={label}
+    >
+      {children}
+    </button>
   );
 }

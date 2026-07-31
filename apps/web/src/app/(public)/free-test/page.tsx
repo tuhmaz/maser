@@ -5,7 +5,7 @@ import { BrandMark } from "@/components/BrandMark";
 
 export default function FreeTestPage() {
   return (
-    <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 sm:px-6 sm:py-10">
+    <main dir="rtl" className="min-h-screen bg-[#f5f7fb] px-4 py-6 sm:px-6 sm:py-10">
       <div className="mx-auto max-w-4xl">
         <BrandMark />
         <section className="mt-8 grid overflow-hidden rounded-lg border border-[#e3e8f2] bg-white shadow-[0_18px_45px_rgba(31,48,83,0.08)] md:grid-cols-[0.8fr_1.2fr]">

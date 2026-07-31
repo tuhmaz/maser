@@ -1,50 +1,59 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FileQuestion, RefreshCw } from "lucide-react";
 import type { AdminQuiz } from "@alemedu/api-client";
+import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
 
-// اختبارات الدروس تُنشأ تلقائيًا عند نشر أول سؤال في الدرس (بلا حاجة لإدارة يدوية) —
-// راجع Publish في services/api/internal/handlers/admin_questions.go. هذه الصفحة للقراءة فقط.
 export default function AdminQuizzesPage() {
   const [quizzes, setQuizzes] = useState<AdminQuiz[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.adminListQuizzes().then(setQuizzes).catch(() => setQuizzes([]));
-  }, []);
+  function load() {
+    setLoading(true);
+    api.adminListQuizzes()
+      .then(setQuizzes)
+      .catch((err: any) => setError(err?.message ?? "تعذّر جلب الاختبارات"))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="admin-eyebrow">الاختبارات</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">اختبارات الدروس</h1>
-        <p className="mt-2 max-w-3xl leading-7 text-slate-600">
-          تُنشأ تلقائيًا عند نشر أول سؤال في الدرس، وتُضاف إليها الأسئلة المنشورة تباعًا —
-          لا حاجة لإنشائها يدويًا.
-        </p>
-      </header>
+      <AdminPageHeader
+        eyebrow="التقييم"
+        title="اختبارات الدروس"
+        description="تُنشأ تلقائياً عند نشر أول سؤال في الدرس، ويعرض العدد الحالي للأسئلة المنشورة فعلياً."
+        actions={<Button variant="secondary" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /> تحديث</Button>}
+      />
 
-      <div className="admin-surface overflow-hidden">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">الدرس</th>
-              <th className="px-4 py-3 font-bold">عنوان الاختبار</th>
-              <th className="px-4 py-3 font-bold">عدد الأسئلة</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {quizzes.map((q) => (
-              <tr key={q.id}>
-                <td className="px-4 py-3 font-semibold text-slate-950">{q.lessonName}</td>
-                <td className="px-4 py-3 text-slate-600">{q.title}</td>
-                <td className="px-4 py-3 text-slate-600">{q.questionCount}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {quizzes.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد اختبارات بعد — انشر سؤالًا في درس ليُنشأ اختباره تلقائيًا.</p>}
-      </div>
+      {error && <p role="alert" className="admin-error">{error}</p>}
+
+      {quizzes.length === 0 && !loading ? (
+        <AdminEmptyState title="لا توجد اختبارات بعد" description="انشر أول سؤال في درس ليُنشأ اختباره تلقائياً." icon={<FileQuestion size={30} />} />
+      ) : (
+        <section className="admin-surface overflow-hidden">
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>الاختبار</th><th>الدرس</th><th>عدد الأسئلة</th><th>الجاهزية</th></tr></thead>
+              <tbody className="divide-y divide-[#edf1f6]">
+                {quizzes.map((quiz) => (
+                  <tr key={quiz.id}>
+                    <td className="font-black text-[#12213f]">{quiz.title}</td>
+                    <td className="text-[#526078]">{quiz.lessonName}</td>
+                    <td className="font-black text-[#12213f]">{quiz.questionCount.toLocaleString("ar")}</td>
+                    <td><AdminStatusBadge label={quiz.questionCount > 0 ? "جاهز" : "بلا أسئلة"} tone={quiz.questionCount > 0 ? "success" : "warning"} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

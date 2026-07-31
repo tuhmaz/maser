@@ -1,39 +1,47 @@
-import { ApiClient, type AuthResponse } from "@alemedu/api-client";
+import { ApiClient, type AuthResponse, type User } from "@alemedu/api-client";
 
-const ACCESS_TOKEN_KEY = "alemedu_admin_access_token";
-const REFRESH_TOKEN_KEY = "alemedu_admin_refresh_token";
+// نفس نمط apps/web: رمز الوصول في الذاكرة فقط، رمز التحديث كوكي HttpOnly لا
+// تراه جافاسكربت إطلاقًا (يضبطها الخادم مباشرة). راجع apps/web/src/lib/api.ts
+// للشرح الكامل لسبب هذا التصميم.
+let accessToken: string | null = null;
 
 export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+function setAccessToken(token: string | null) {
+  accessToken = token;
 }
 
-export function setTokens(auth: Pick<AuthResponse, "accessToken" | "refreshToken">) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, auth.accessToken);
-  window.localStorage.setItem(REFRESH_TOKEN_KEY, auth.refreshToken);
+/** يُستدعى بعد login/changePassword الناجحة لتخزين رمز الوصول الجديد. */
+export function applySession(auth: Pick<AuthResponse, "accessToken">) {
+  setAccessToken(auth.accessToken);
 }
 
-export function clearTokens() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+export function clearSession() {
+  setAccessToken(null);
 }
 
 export const api = new ApiClient({
   baseUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080",
   getAccessToken,
-  getRefreshToken,
-  onTokensUpdated: setTokens,
+  onTokensUpdated: applySession,
   onAuthFailure: () => {
-    clearTokens();
+    clearSession();
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
       window.location.href = "/login";
     }
   },
 });
+
+/** يستعيد الجلسة من كوكي رمز التحديث بعد إعادة تحميل الصفحة. */
+export async function bootstrapSession(): Promise<User | null> {
+  try {
+    const auth = await api.refresh();
+    setAccessToken(auth.accessToken);
+    return auth.user;
+  } catch {
+    setAccessToken(null);
+    return null;
+  }
+}

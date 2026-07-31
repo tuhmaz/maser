@@ -1,142 +1,157 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Boxes, Pencil, Plus, RefreshCw, Save, X } from "lucide-react";
 import type { AdminUnit, Grade, Subject } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
 
-// إدارة وحدات المادة — docs/database-design.md: جدول units.
 export default function UnitsPage() {
   const [grades, setGrades] = useState<Grade[]>([]);
+  const [gradeId, setGradeId] = useState("");
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [subjectId, setSubjectId] = useState<string>("");
+  const [subjectId, setSubjectId] = useState("");
   const [units, setUnits] = useState<AdminUnit[]>([]);
   const [name, setName] = useState("");
   const [order, setOrder] = useState(1);
-  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<AdminUnit | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listGrades().then((gs) => {
-      setGrades(gs);
-      if (gs[0]) api.listSubjectsForGrade(gs[0].id).then((ss) => {
-        setSubjects(ss);
-        if (ss[0]) setSubjectId(ss[0].id);
-      });
-    });
+    api.listGrades().then((items) => {
+      setGrades(items);
+      setGradeId(items[0]?.id ?? "");
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب الصفوف"));
   }, []);
 
-  function loadUnits(sid: string) {
-    if (!sid) return;
-    api.adminListUnits(sid).then(setUnits).catch(() => setUnits([]));
+  useEffect(() => {
+    if (!gradeId) return;
+    api.listSubjectsForGrade(gradeId).then((items) => {
+      setSubjects(items);
+      setSubjectId(items[0]?.id ?? "");
+    }).catch((err: any) => setError(err?.message ?? "تعذّر جلب المواد"));
+  }, [gradeId]);
+
+  function loadUnits(selectedSubjectId = subjectId) {
+    if (!selectedSubjectId) {
+      setUnits([]);
+      return;
+    }
+    api.adminListUnits(selectedSubjectId)
+      .then((items) => {
+        setUnits(items);
+        setOrder(items.length + 1);
+      })
+      .catch((err: any) => setError(err?.message ?? "تعذّر جلب الوحدات"));
   }
+  useEffect(() => { loadUnits(subjectId); }, [subjectId]);
 
-  useEffect(() => loadUnits(subjectId), [subjectId]);
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    if (!subjectId || !name.trim()) return;
+    setSaving(true);
     setError(null);
     try {
-      await api.adminCreateUnit({ subjectId, name, order });
+      await api.adminCreateUnit({ subjectId, name: name.trim(), order });
       setName("");
-      setOrder(units.length + 2);
-      loadUnits(subjectId);
+      setShowForm(false);
+      loadUnits();
     } catch (err: any) {
       setError(err?.message ?? "تعذّر إنشاء الوحدة");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function handleSaveEdit() {
+  async function saveEdit() {
     if (!editing) return;
+    setSaving(true);
     setError(null);
     try {
-      await api.adminUpdateUnit(editing.id, { name: editing.name, order: editing.order, isActive: editing.isActive });
+      await api.adminUpdateUnit(editing.id, { name: editing.name.trim(), order: editing.order, isActive: editing.isActive });
       setEditing(null);
-      loadUnits(subjectId);
+      loadUnits();
     } catch (err: any) {
-      setError(err?.message ?? "تعذّر حفظ التعديل");
+      setError(err?.message ?? "تعذّر حفظ الوحدة");
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="admin-eyebrow">المنهاج</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">الوحدات</h1>
-      </header>
+      <AdminPageHeader
+        eyebrow="هيكل المنهاج"
+        title="الوحدات"
+        description="إنشاء الوحدات وتعديل ترتيبها وحالتها ضمن المادة المحددة."
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => loadUnits()} disabled={!subjectId}><RefreshCw size={17} /> تحديث</Button>
+            <Button onClick={() => setShowForm((value) => !value)} disabled={!subjectId}><Plus size={17} /> وحدة جديدة</Button>
+          </>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-semibold text-slate-600">المادة:</label>
-        <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="min-w-[10rem]">
-          {grades.length === 0 && <option>—</option>}
-          {subjects.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-      </div>
+      {error && <p role="alert" className="admin-error">{error}</p>}
 
-      <form onSubmit={handleCreate} className="admin-surface flex flex-wrap items-end gap-3 p-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500">اسم الوحدة</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} required className="w-64" />
+      <section className="admin-surface flex flex-wrap gap-4 p-4">
+        <div>
+          <label htmlFor="unit-grade" className="mb-2 block text-xs font-black text-[#526078]">الصف</label>
+          <select id="unit-grade" value={gradeId} onChange={(event) => setGradeId(event.target.value)} className="min-w-48">
+            {grades.map((grade) => <option key={grade.id} value={grade.id}>{grade.name}</option>)}
+          </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500">الترتيب</label>
-          <input type="number" value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-20" />
+        <div>
+          <label htmlFor="unit-subject" className="mb-2 block text-xs font-black text-[#526078]">المادة</label>
+          <select id="unit-subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)} className="min-w-48">
+            {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+          </select>
         </div>
-        <Button type="submit" disabled={!subjectId}>إضافة وحدة</Button>
-      </form>
+      </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {showForm && (
+        <form onSubmit={create} className="admin-surface grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_140px_auto] md:items-end">
+          <div><label htmlFor="unit-name" className="mb-2 block text-xs font-black text-[#526078]">اسم الوحدة</label><input id="unit-name" className="w-full" value={name} onChange={(event) => setName(event.target.value)} required /></div>
+          <div><label htmlFor="unit-order" className="mb-2 block text-xs font-black text-[#526078]">الترتيب</label><input id="unit-order" className="w-full" type="number" min={1} value={order} onChange={(event) => setOrder(Number(event.target.value))} /></div>
+          <Button type="submit" disabled={saving}>{saving ? "جارٍ الحفظ..." : "حفظ الوحدة"}</Button>
+        </form>
+      )}
 
-      <div className="admin-surface overflow-hidden">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">الاسم</th>
-              <th className="px-4 py-3 font-bold">الترتيب</th>
-              <th className="px-4 py-3 font-bold">الحالة</th>
-              <th className="px-4 py-3 font-bold"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {units.map((u) => (
-              <tr key={u.id}>
-                {editing?.id === u.id ? (
-                  <>
-                    <td className="px-4 py-2"><input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></td>
-                    <td className="px-4 py-2"><input type="number" className="w-16" value={editing.order} onChange={(e) => setEditing({ ...editing, order: Number(e.target.value) })} /></td>
-                    <td className="px-4 py-2">
-                      <label className="flex items-center gap-2 text-xs">
-                        <input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} />
-                        نشطة
-                      </label>
-                    </td>
-                    <td className="flex gap-2 px-4 py-2">
-                      <Button onClick={handleSaveEdit}>حفظ</Button>
-                      <Button variant="secondary" onClick={() => setEditing(null)}>إلغاء</Button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="px-4 py-3 font-semibold text-slate-950">{u.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{u.order}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-md px-2 py-1 text-xs font-bold ${u.isActive ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-500"}`}>
-                        {u.isActive ? "نشطة" : "معطّلة"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Button variant="secondary" onClick={() => setEditing(u)}>تعديل</Button>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {units.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد وحدات بعد.</p>}
-      </div>
+      {units.length === 0 ? (
+        <AdminEmptyState title="لا توجد وحدات لهذه المادة" icon={<Boxes size={30} />} />
+      ) : (
+        <section className="admin-surface overflow-hidden">
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>الترتيب</th><th>اسم الوحدة</th><th>الحالة</th><th>الإجراءات</th></tr></thead>
+              <tbody className="divide-y divide-[#edf1f6]">
+                {units.map((unit) => (
+                  <tr key={unit.id}>
+                    {editing?.id === unit.id ? (
+                      <>
+                        <td><input type="number" min={1} className="w-20" value={editing.order} onChange={(event) => setEditing({ ...editing, order: Number(event.target.value) })} /></td>
+                        <td><input className="w-full min-w-64" value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></td>
+                        <td><label className="flex items-center gap-2 text-xs font-bold text-[#526078]"><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> نشطة</label></td>
+                        <td><div className="flex gap-2"><Button onClick={() => void saveEdit()} disabled={saving}><Save size={16} /> حفظ</Button><Button variant="secondary" onClick={() => setEditing(null)}><X size={16} /> إلغاء</Button></div></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="font-black text-[#1565d8]">{unit.order}</td>
+                        <td className="font-black text-[#12213f]">{unit.name}</td>
+                        <td><AdminStatusBadge label={unit.isActive ? "نشطة" : "معطلة"} tone={unit.isActive ? "success" : "neutral"} /></td>
+                        <td><Button variant="secondary" onClick={() => setEditing({ ...unit })}><Pencil size={16} /> تعديل</Button></td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

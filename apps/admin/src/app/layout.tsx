@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AdminShell } from "@/components/AdminShell";
+import { SiteSettingsProvider } from "@/lib/site-settings";
 
 export const metadata: Metadata = {
   title: "Alemedu — لوحة الإدارة",
@@ -11,7 +12,9 @@ export default function AdminRootLayout({ children }: { children: React.ReactNod
   return (
     <html lang="ar" dir="ltr">
       <body className="min-h-screen antialiased">
-        <AdminShell>{children}</AdminShell>
+        <SiteSettingsProvider>
+          <AdminShell>{children}</AdminShell>
+        </SiteSettingsProvider>
       </body>
     </html>
   );

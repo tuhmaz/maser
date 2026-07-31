@@ -1,53 +1,92 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Activity, RefreshCw, Search } from "lucide-react";
 import type { AuditLogEntry } from "@alemedu/api-client";
+import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader } from "@/components/AdminPageHeader";
 
-// سجل تدقيق عمليات الإدارة الحساسة — docs/security-requirements.md.
+const ACTION_LABELS: Record<string, string> = {
+  "question.create": "إنشاء سؤال",
+  "question.update": "تعديل سؤال",
+  "question.submit_review": "إرسال سؤال للمراجعة",
+  "question.review": "قرار مراجعة",
+  "question.publish": "نشر سؤال",
+  "question.archive": "أرشفة سؤال",
+  "question.delete": "حذف مسودة",
+  "user.change_role": "تغيير صلاحية",
+  "content_issue.resolve": "معالجة بلاغ",
+  "feature_flag.update": "تحديث ميزة",
+};
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.adminListAuditLogs().then(setLogs).catch((err: any) => setError(err?.message ?? "تعذّر جلب سجل التدقيق"));
-  }, []);
+  function load() {
+    setLoading(true);
+    setError(null);
+    api.adminListAuditLogs()
+      .then(setLogs)
+      .catch((err: any) => setError(err?.message ?? "تعذّر جلب سجل التدقيق"))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return logs;
+    return logs.filter((log) =>
+      [log.actorEmail, log.action, ACTION_LABELS[log.action], log.entityType, log.entityId]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalized)),
+    );
+  }, [logs, query]);
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="admin-eyebrow">الأمان</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">سجل التدقيق</h1>
-        <p className="mt-2 max-w-3xl leading-7 text-slate-600">آخر 200 عملية إدارية حساسة.</p>
-      </header>
+      <AdminPageHeader
+        eyebrow="الأمان والامتثال"
+        title="سجل التدقيق"
+        description="آخر 200 عملية إدارية حساسة مسجلة بواسطة الخادم."
+        actions={<Button variant="secondary" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /> تحديث</Button>}
+      />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="admin-error">{error}</p>}
 
-      <div className="admin-surface overflow-hidden">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">الوقت</th>
-              <th className="px-4 py-3 font-bold">المنفّذ</th>
-              <th className="px-4 py-3 font-bold">العملية</th>
-              <th className="px-4 py-3 font-bold">الكيان</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {logs.map((l) => (
-              <tr key={l.id}>
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
-                  {new Date(l.createdAt).toLocaleString("ar")}
-                </td>
-                <td className="px-4 py-3 text-slate-600">{l.actorEmail || "—"}</td>
-                <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-950">{l.action}</td>
-                <td className="px-4 py-3 text-xs text-slate-400">{l.entityType}{l.entityId ? `#${l.entityId.slice(0, 8)}` : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {logs.length === 0 && <p className="p-5 text-sm text-slate-500">لا توجد عمليات مسجَّلة بعد.</p>}
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8d99ad]" size={17} />
+        <input className="w-full pr-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="بحث بالمنفذ أو العملية أو الكيان..." />
       </div>
+
+      <section className="admin-surface overflow-hidden">
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>الوقت</th><th>المنفّذ</th><th>العملية</th><th>نوع الكيان</th><th>المعرّف</th></tr></thead>
+            <tbody className="divide-y divide-[#edf1f6]">
+              {filtered.map((log) => (
+                <tr key={log.id}>
+                  <td className="whitespace-nowrap text-xs text-[#64718a]">{formatDate(log.createdAt)}</td>
+                  <td className="font-bold text-[#33415c]">{log.actorEmail || "عملية نظام"}</td>
+                  <td><span className="admin-chip bg-[#eaf2ff] text-[#1565d8]">{ACTION_LABELS[log.action] ?? log.action}</span></td>
+                  <td className="text-[#526078]">{log.entityType}</td>
+                  <td dir="ltr" className="text-left font-mono text-xs text-[#7b879c]">{log.entityId?.slice(0, 12) || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!loading && filtered.length === 0 && <div className="p-5"><AdminEmptyState title="لا توجد عمليات مطابقة" icon={<Activity size={30} />} /></div>}
+      </section>
     </div>
   );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ar-JO");
 }

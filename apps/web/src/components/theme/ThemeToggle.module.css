@@ -1,0 +1,30 @@
+.toggle {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 12px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.iconOnly {
+  width: 40px;
+  padding: 0;
+}
+
+.label {
+  white-space: nowrap;
+}
+

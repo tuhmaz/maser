@@ -1,41 +1,52 @@
-import { ApiClient, type AuthResponse } from "@alemedu/api-client";
+import { ApiClient, type AuthResponse, type User } from "@alemedu/api-client";
 
-const ACCESS_TOKEN_KEY = "alemedu_access_token";
-const REFRESH_TOKEN_KEY = "alemedu_refresh_token";
+// رمز الوصول يعيش في الذاكرة فقط (متغيّر وحدة) — لا localStorage ولا كوكي
+// عادية. أي XSS في التطبيق لا يستطيع سرقته من تخزين دائم، وأقصى ضرر محتمل
+// محصور بعمر الصفحة الحالية فقط. رمز التحديث لا يصل إلى جافاسكربت إطلاقًا:
+// يعيش في كوكي HttpOnly يضبطها الخادم مباشرة (راجع services/api/internal/handlers/session_cookie.go).
+let accessToken: string | null = null;
 
 export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+function setAccessToken(token: string | null) {
+  accessToken = token;
 }
 
-/** يخزّن رمزي الجلسة معًا — يُستدعى بعد register/login وبعد كل تجديد تلقائي. */
-export function setTokens(auth: Pick<AuthResponse, "accessToken" | "refreshToken">) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, auth.accessToken);
-  window.localStorage.setItem(REFRESH_TOKEN_KEY, auth.refreshToken);
+/** يُستدعى بعد login/register/changePassword الناجحة لتخزين رمز الوصول الجديد. */
+export function applySession(auth: Pick<AuthResponse, "accessToken">) {
+  setAccessToken(auth.accessToken);
 }
 
-export function clearTokens() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+export function clearSession() {
+  setAccessToken(null);
 }
 
 export const api = new ApiClient({
   baseUrl: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080",
   getAccessToken,
-  getRefreshToken,
-  onTokensUpdated: setTokens,
+  onTokensUpdated: applySession,
   onAuthFailure: () => {
-    // انتهت الجلسة نهائيًا: نظّف الرموز ووجّه لصفحة الدخول
-    clearTokens();
+    clearSession();
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
       window.location.href = "/login";
     }
   },
 });
+
+/**
+ * يُستدعى مرة عند تحميل أي صفحة محمية (رمز الوصول في الذاكرة يُفقَد عند أي
+ * إعادة تحميل): يحاول استعادة الجلسة من كوكي رمز التحديث دون أي تفاعل من
+ * المستخدم. يعيد المستخدم إن نجحت الاستعادة، أو null إن لم تكن هناك جلسة.
+ */
+export async function bootstrapSession(): Promise<User | null> {
+  try {
+    const auth = await api.refresh();
+    setAccessToken(auth.accessToken);
+    return auth.user;
+  } catch {
+    setAccessToken(null);
+    return null;
+  }
+}

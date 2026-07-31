@@ -1,140 +1,147 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, BookCopy, BookOpen, Boxes, GraduationCap, RefreshCw } from "lucide-react";
 import type { AdminLesson, AdminUnit, Grade, Subject } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
+import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
 
-// نظرة عامة على هيكل المنهاج — docs/curriculum-structure.md.
-// خطة التوسع (docs/product-requirements.md §9): صف/مادة جديدة بعد إثبات الاستخدام
-// — النموذجان أدناه يفعّلان ذلك دون الحاجة لـ SQL يدوي.
 export default function CurriculumPage() {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [subjects, setSubjects] = useState<Record<string, Subject[]>>({});
   const [units, setUnits] = useState<Record<string, AdminUnit[]>>({});
   const [lessons, setLessons] = useState<AdminLesson[]>([]);
-
-  const [gradeName, setGradeName] = useState("");
-  const [gradeLevel, setGradeLevel] = useState(8);
-  const [subjectGradeId, setSubjectGradeId] = useState("");
-  const [subjectName, setSubjectName] = useState("");
-  const [subjectSlug, setSubjectSlug] = useState("");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  function load() {
-    api.listGrades().then(async (gs) => {
-      setGrades(gs);
-      if (gs[0] && !subjectGradeId) setSubjectGradeId(gs[0].id);
-      for (const g of gs) {
-        const ss = await api.listSubjectsForGrade(g.id);
-        setSubjects((prev) => ({ ...prev, [g.id]: ss }));
-        for (const s of ss) {
-          const us = await api.adminListUnits(s.id);
-          setUnits((prev) => ({ ...prev, [s.id]: us }));
-        }
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const gradeItems = await api.listGrades();
+      const lessonItems = await api.adminListLessons();
+      const subjectMap: Record<string, Subject[]> = {};
+      const unitMap: Record<string, AdminUnit[]> = {};
+
+      for (const grade of gradeItems) {
+        const gradeSubjects = await api.listSubjectsForGrade(grade.id);
+        subjectMap[grade.id] = gradeSubjects;
+        const unitEntries = await Promise.all(
+          gradeSubjects.map(async (subject) => [subject.id, await api.adminListUnits(subject.id)] as const),
+        );
+        unitEntries.forEach(([subjectId, subjectUnits]) => { unitMap[subjectId] = subjectUnits; });
       }
-    });
-    api.adminListLessons().then(setLessons);
-  }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, []);
-
-  async function createGrade(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.adminCreateGrade({ name: gradeName, level: gradeLevel });
-      setGradeName("");
-      load();
+      setGrades(gradeItems);
+      setLessons(lessonItems);
+      setSubjects(subjectMap);
+      setUnits(unitMap);
     } catch (err: any) {
-      setError(err?.message ?? "تعذّر إنشاء الصف");
+      setError(err?.message ?? "تعذّر جلب هيكل المنهاج");
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
 
-  async function createSubject(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.adminCreateSubject({ gradeId: subjectGradeId, name: subjectName, slug: subjectSlug });
-      setSubjectName("");
-      setSubjectSlug("");
-      load();
-    } catch (err: any) {
-      setError(err?.message ?? "تعذّر إنشاء المادة");
-    }
-  }
+  useEffect(() => { void load(); }, [load]);
+
+  const totals = useMemo(() => {
+    const allSubjects = Object.values(subjects).flat();
+    const allUnits = Object.values(units).flat();
+    return {
+      grades: grades.length,
+      subjects: allSubjects.length,
+      units: allUnits.length,
+      lessons: lessons.length,
+    };
+  }, [grades, lessons, subjects, units]);
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="admin-eyebrow">المنهاج</p>
-        <h1 className="mt-2 text-3xl font-black text-slate-950">هيكل المنهاج</h1>
-        <p className="mt-2 max-w-3xl leading-7 text-slate-600">
-          المرحلة ← الصف ← الفصل ← المادة ← الوحدة ← الدرس ← المهارة. عدّل الوحدات
-          والدروس والمهارات من صفحاتها المخصصة.
-        </p>
-      </header>
+      <AdminPageHeader
+        eyebrow="إدارة المحتوى"
+        title="هيكل المنهاج"
+        description="عرض مباشر للعلاقات بين الصفوف والمواد والوحدات والدروس. التعديل يتم من الصفحات المتخصصة."
+        actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /> تحديث</Button>}
+      />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="admin-error">{error}</p>}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <form onSubmit={createGrade} className="admin-surface flex flex-col gap-3 p-4">
-          <h2 className="font-black text-slate-950">إضافة صف (توسع)</h2>
-          <input placeholder="اسم الصف (مثال: الصف الثامن)" value={gradeName} onChange={(e) => setGradeName(e.target.value)} required />
-          <input type="number" placeholder="المستوى الرقمي" value={gradeLevel} onChange={(e) => setGradeLevel(Number(e.target.value))} min={5} max={12} required />
-          <Button type="submit" className="w-fit">إضافة الصف</Button>
-        </form>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { icon: GraduationCap, label: "الصفوف", value: totals.grades, href: "/grades", color: "bg-[#eaf2ff] text-[#1565d8]" },
+          { icon: BookCopy, label: "المواد", value: totals.subjects, href: "/subjects", color: "bg-[#e7f7fb] text-[#087d96]" },
+          { icon: Boxes, label: "الوحدات", value: totals.units, href: "/units", color: "bg-[#f0edff] text-[#7357d4]" },
+          { icon: BookOpen, label: "الدروس", value: totals.lessons, href: "/lessons", color: "bg-[#e8f7f2] text-[#159b72]" },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link key={item.label} href={item.href} className="admin-stat flex items-center gap-4 transition hover:border-[#b9cbea]">
+              <span className={`flex h-11 w-11 items-center justify-center rounded-lg ${item.color}`}><Icon size={21} /></span>
+              <div><p className="text-xs font-bold text-[#64718a]">{item.label}</p><p className="mt-1 text-2xl font-black text-[#12213f]">{item.value.toLocaleString("ar")}</p></div>
+              <ArrowLeft className="mr-auto text-[#9aa6b8]" size={17} />
+            </Link>
+          );
+        })}
+      </section>
 
-        <form onSubmit={createSubject} className="admin-surface flex flex-col gap-3 p-4">
-          <h2 className="font-black text-slate-950">إضافة مادة (توسع)</h2>
-          <select value={subjectGradeId} onChange={(e) => setSubjectGradeId(e.target.value)} required>
-            {grades.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-          <input placeholder="اسم المادة (مثال: العلوم)" value={subjectName} onChange={(e) => setSubjectName(e.target.value)} required />
-          <input placeholder="slug (مثال: science)" value={subjectSlug} onChange={(e) => setSubjectSlug(e.target.value)} required />
-          <Button type="submit" disabled={!subjectGradeId} className="w-fit">إضافة المادة</Button>
-        </form>
-      </div>
-
-      {grades.length === 0 && <div className="admin-empty">لا توجد صفوف بعد.</div>}
-
-      <div className="space-y-4">
-        {grades.map((g) => (
-          <section key={g.id} className="admin-surface p-5">
-            <h2 className="text-lg font-black text-slate-950">{g.name}</h2>
-            {(subjects[g.id] ?? []).map((s) => (
-              <div key={s.id} className="mt-3 border-r-2 border-teal-100 pr-4">
-                <p className="font-semibold text-teal-800">{s.name}</p>
-                <ul className="mt-2 space-y-2">
-                  {(units[s.id] ?? []).map((u) => (
-                    <li key={u.id} className="border-r-2 border-slate-100 pr-4">
-                      <p className="text-sm font-semibold text-slate-800">{u.name}</p>
-                      <ul className="mt-1 flex flex-wrap gap-2">
-                        {lessons.filter((l) => l.unitId === u.id).map((l) => (
-                          <li key={l.id} className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600">{l.name}</li>
-                        ))}
-                        {lessons.filter((l) => l.unitId === u.id).length === 0 && (
-                          <li className="text-xs text-slate-400">لا دروس بعد</li>
-                        )}
-                      </ul>
-                    </li>
-                  ))}
-                  {(units[s.id] ?? []).length === 0 && <li className="text-xs text-slate-400">لا وحدات بعد</li>}
-                </ul>
+      {!loading && grades.length === 0 ? (
+        <AdminEmptyState title="لا يوجد منهاج بعد" description="ابدأ بإنشاء صف ثم مادة." icon={<GraduationCap size={30} />} />
+      ) : (
+        <div className="space-y-4">
+          {grades.map((grade) => (
+            <section key={grade.id} className="admin-surface overflow-hidden">
+              <div className="flex items-center justify-between gap-4 border-b border-[#e7ecf3] bg-[#f8faff] px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eaf2ff] text-[#1565d8]"><GraduationCap size={20} /></span>
+                  <div><p className="text-xs font-bold text-[#64718a]">المستوى {grade.level}</p><h2 className="mt-1 font-black text-[#12213f]">{grade.name}</h2></div>
+                </div>
+                <AdminStatusBadge label={`${(subjects[grade.id] ?? []).length} مواد`} tone="info" />
               </div>
-            ))}
-            {(subjects[g.id] ?? []).length === 0 && <p className="mt-2 text-xs text-slate-400">لا مواد بعد لهذا الصف</p>}
-          </section>
-        ))}
-      </div>
 
-      <div className="flex gap-3 text-sm">
-        <Link href="/units" className="font-semibold text-teal-700 hover:underline">إدارة الوحدات ←</Link>
-        <Link href="/lessons" className="font-semibold text-teal-700 hover:underline">إدارة الدروس ←</Link>
-        <Link href="/skills" className="font-semibold text-teal-700 hover:underline">إدارة المهارات ←</Link>
-      </div>
+              {(subjects[grade.id] ?? []).length === 0 ? (
+                <p className="p-5 text-sm text-[#64718a]">لا توجد مواد مرتبطة بهذا الصف.</p>
+              ) : (
+                <div className="grid gap-0 divide-y divide-[#edf1f6] xl:grid-cols-2 xl:divide-x xl:divide-x-reverse xl:divide-y-0">
+                  {(subjects[grade.id] ?? []).map((subject) => (
+                    <article key={subject.id} className="p-5">
+                      <div className="flex items-center gap-2">
+                        <BookCopy size={18} className="text-[#087d96]" />
+                        <h3 className="font-black text-[#12213f]">{subject.name}</h3>
+                        <span dir="ltr" className="mr-auto font-mono text-[10px] text-[#9aa6b8]">{subject.slug}</span>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {(units[subject.id] ?? []).map((unit) => {
+                          const unitLessons = lessons.filter((lesson) => lesson.unitId === unit.id);
+                          return (
+                            <div key={unit.id} className="rounded-lg border border-[#e7ecf3] bg-[#fbfcfe] p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-black text-[#33415c]">{unit.order}. {unit.name}</p>
+                                <AdminStatusBadge label={unit.isActive ? "نشطة" : "معطلة"} tone={unit.isActive ? "success" : "neutral"} />
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-1.5">
+                                {unitLessons.map((lesson) => (
+                                  <span key={lesson.id} className={`rounded-md px-2 py-1 text-[11px] font-bold ${lesson.isActive ? "bg-white text-[#526078]" : "bg-[#eef1f5] text-[#9aa6b8]"}`}>
+                                    {lesson.name}
+                                  </span>
+                                ))}
+                                {unitLessons.length === 0 && <span className="text-xs text-[#9aa6b8]">لا دروس بعد</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {(units[subject.id] ?? []).length === 0 && <p className="text-xs text-[#9aa6b8]">لا توجد وحدات لهذه المادة.</p>}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

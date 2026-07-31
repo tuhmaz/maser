@@ -3,17 +3,27 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Calculator, Clock3, Map, Sparkles } from "lucide-react";
-import type { Subject } from "@alemedu/api-client";
+import type { Subject, User } from "@alemedu/api-client";
 import { api } from "@/lib/api";
 
+const MVP_GRADE_ID = "00000000-0000-0000-0000-000000000004";
+
 export default function StudentSubjectsPage() {
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjects, setSubjects] = useState<Subject[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .listSubjectsForGrade("00000000-0000-0000-0000-000000000004")
-      .then(setSubjects)
-      .catch(() => setSubjects([]));
+    async function load() {
+      try {
+        const user = await api.me();
+        const gradeId = (user as User & { gradeId?: string }).gradeId || MVP_GRADE_ID;
+        setSubjects(await api.listSubjectsForGrade(gradeId));
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "تعذّر جلب مواد الصف.");
+        setSubjects([]);
+      }
+    }
+    void load();
   }, []);
 
   return (
@@ -24,7 +34,18 @@ export default function StudentSubjectsPage() {
         <p className="student-page-copy">استكشف الوحدات بالترتيب أو عد مباشرة إلى المهمة التي اخترناها لك اليوم.</p>
       </header>
 
-      {subjects.length === 0 ? (
+      {error && (
+        <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+          {error}
+        </p>
+      )}
+
+      {subjects === null ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="student-loading h-44" />
+          <div className="student-loading h-44" />
+        </div>
+      ) : subjects.length === 0 ? (
         <div className="empty-state">
           <Map className="mx-auto mb-3 text-slate-300" size={34} aria-hidden="true" />
           لم تُنشر مواد صفك بعد.
