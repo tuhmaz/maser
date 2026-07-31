@@ -205,64 +205,101 @@ type StartTaskResult struct {
 	Attempt *AttemptView `json:"attempt,omitempty"`
 }
 
+// StartTask يبدأ مهمة، أو يستأنف محاولتها القائمة إن كانت مهمة اختبار بدأها
+// الطالب سابقًا (إعادة الضغط لا تُنشئ محاولة مكرَّرة — راجع تقرير المراجعة
+// §8.4/§8.5). حالة المهمة لا تتحوَّل إلى in_progress إلا بعد نجاح إنشاء/إيجاد
+// المحاولة فعليًا، ولا يمكن "بدء" مهمة مكتملة أصلًا (كانت تُعاد إلى in_progress بصمت).
 func (s *DailyPlanService) StartTask(ctx context.Context, userID, taskID string) (*StartTaskResult, error) {
-	taskType, payload, err := s.getOwnedTask(ctx, userID, taskID, "in_progress")
+	taskType, status, payload, err := s.getTask(ctx, userID, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if status == "completed" {
+		return nil, ErrTaskFinished
 	}
 
 	switch taskType {
 	case "new_questions", "stabilization_test":
+		if existing, err := s.quiz.AttemptForDailyTask(ctx, userID, taskID); err == nil {
+			view, err := s.quiz.GetAttempt(ctx, userID, existing.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &StartTaskResult{Kind: "attempt", Attempt: view}, nil
+		} else if !errors.Is(err, repository.ErrNotFound) {
+			return nil, err
+		}
+
 		var p struct {
 			QuestionIDs []string `json:"questionIds"`
 		}
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return nil, fmt.Errorf("payload مهمة غير صالح: %w", err)
 		}
-		attemptType := "daily"
-		view, err := s.quiz.StartAdHocAttempt(ctx, userID, attemptType, p.QuestionIDs)
+		view, err := s.quiz.StartAdHocAttempt(ctx, userID, "daily", p.QuestionIDs, &taskID)
 		if err != nil {
+			return nil, err
+		}
+		if err := s.setTaskStatus(ctx, taskID, "in_progress"); err != nil {
 			return nil, err
 		}
 		return &StartTaskResult{Kind: "attempt", Attempt: view}, nil
 
 	case "short_review", "mistake_question":
+		if err := s.setTaskStatus(ctx, taskID, "in_progress"); err != nil {
+			return nil, err
+		}
 		return &StartTaskResult{Kind: "review"}, nil
 
 	default: // explanation
+		if err := s.setTaskStatus(ctx, taskID, "in_progress"); err != nil {
+			return nil, err
+		}
 		return &StartTaskResult{Kind: "explanation"}, nil
 	}
 }
 
+// CompleteTask يُستخدم لمهام بلا اختبار (مراجعة/شرح) — مهام الاختبار تُكمَل
+// تلقائيًا عند التسليم (QuizService.completeLinkedDailyTask)، فاستدعاء هذا
+// على مهمة أُكمِلت أصلًا آمن (idempotent) لا يخطئ.
 func (s *DailyPlanService) CompleteTask(ctx context.Context, userID, taskID string) error {
-	_, _, err := s.getOwnedTask(ctx, userID, taskID, "completed")
+	_, status, _, err := s.getTask(ctx, userID, taskID)
 	if err != nil {
 		return err
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO task_completions (daily_task_id) VALUES ($1)`, taskID)
-	return nil
+	if status == "completed" {
+		return nil
+	}
+	if err := s.setTaskStatus(ctx, taskID, "completed"); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(ctx, `
+		INSERT INTO task_completions (daily_task_id) VALUES ($1) ON CONFLICT (daily_task_id) DO NOTHING
+	`, taskID)
+	return err
 }
 
-// getOwnedTask يتحقق أن المهمة تخص هذا الطالب (عبر daily_plans.user_id) ويحدّث حالتها.
-func (s *DailyPlanService) getOwnedTask(ctx context.Context, userID, taskID, newStatus string) (taskType string, payload json.RawMessage, err error) {
-	var currentStatus string
+// getTask يتحقق أن المهمة تخص هذا الطالب (عبر daily_plans.user_id) ويعيدها
+// للقراءة فقط — لا يغيّر حالتها (راجع setTaskStatus).
+func (s *DailyPlanService) getTask(ctx context.Context, userID, taskID string) (taskType, status string, payload json.RawMessage, err error) {
 	err = s.db.QueryRow(ctx, `
 		SELECT dt.task_type, dt.status, dt.payload
 		FROM daily_tasks dt
 		JOIN daily_plans dp ON dp.id = dt.daily_plan_id
 		WHERE dt.id = $1 AND dp.user_id = $2
-	`, taskID, userID).Scan(&taskType, &currentStatus, &payload)
+	`, taskID, userID).Scan(&taskType, &status, &payload)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", nil, repository.ErrNotFound
+			return "", "", nil, repository.ErrNotFound
 		}
-		return "", nil, err
+		return "", "", nil, err
 	}
-	if currentStatus == "completed" && newStatus == "completed" {
-		return "", nil, ErrTaskFinished
-	}
-	_, err = s.db.Exec(ctx, `UPDATE daily_tasks SET status = $2 WHERE id = $1`, taskID, newStatus)
-	return taskType, payload, err
+	return taskType, status, payload, nil
+}
+
+func (s *DailyPlanService) setTaskStatus(ctx context.Context, taskID, status string) error {
+	_, err := s.db.Exec(ctx, `UPDATE daily_tasks SET status = $2 WHERE id = $1`, taskID, status)
+	return err
 }
 
 // --- استعلامات بناء الخطة ---

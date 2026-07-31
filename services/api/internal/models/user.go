@@ -21,4 +21,5 @@ type PublicUser struct {
 	DisplayName         string `json:"displayName"`
 	Role                string `json:"role"`
 	OnboardingCompleted bool   `json:"onboardingCompleted"`
+	EmailVerified       bool   `json:"emailVerified"`
 }

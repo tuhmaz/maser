@@ -100,14 +100,56 @@ func (r *QuestionRepository) hydrateQuestion(ctx context.Context, q *models.Full
 	return skillRows.Err()
 }
 
-// ForDiagnostic يختار أسئلة منشورة موزعة على مهارات المادة للاختبار التشخيصي
+// ForDiagnostic يختار أسئلة منشورة موزعة عبر مهارات المادة (breadth-first)
+// للاختبار التشخيصي، بدل أسهل/أقدم limit سؤال فقط (كان يمكن أن تأتي كلها من
+// مهارة واحدة إن كانت غنية بالأسئلة، فيغطي التشخيص جزءًا ضئيلًا من المادة).
+// لكل مهارة تُرتَّب أسئلتها (الأسهل والأقدم أولًا)، ثم يُختار بالتناوب: أول
+// سؤال من كل مهارة، ثم الثاني من كل مهارة، وهكذا حتى العدد المطلوب
 // (docs/mastery-model.md: عدد محدود حتى لا ينسحب الطالب).
 func (r *QuestionRepository) ForDiagnostic(ctx context.Context, subjectID string, limit int) ([]models.FullQuestion, error) {
-	return r.loadQuestions(ctx, `
-		q.subject_id = $1
-		ORDER BY q.difficulty, q.created_at
+	rows, err := r.db.Query(ctx, `
+		WITH ranked AS (
+			SELECT q.id, qs.skill_id,
+			       ROW_NUMBER() OVER (PARTITION BY qs.skill_id ORDER BY q.difficulty, q.created_at) AS skill_rank
+			FROM questions q
+			JOIN question_skills qs ON qs.question_id = q.id
+			WHERE q.status = 'published' AND q.subject_id = $1
+		),
+		best AS (
+			-- سؤال قد ينتمي لأكثر من مهارة؛ يُحتسَب مرة واحدة عند أفضل ترتيب له بين مهاراته
+			SELECT id, MIN(skill_rank) AS best_rank
+			FROM ranked
+			GROUP BY id
+		)
+		SELECT q.id, qv.id, q.question_type, qv.body, COALESCE(qv.explanation, '')
+		FROM best b
+		JOIN questions q ON q.id = b.id
+		JOIN question_versions qv ON qv.question_id = q.id AND qv.version_number = q.current_version
+		ORDER BY b.best_rank, q.created_at
 		LIMIT $2
 	`, subjectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []models.FullQuestion
+	for rows.Next() {
+		var q models.FullQuestion
+		if err := rows.Scan(&q.ID, &q.VersionID, &q.Type, &q.Body, &q.Explanation); err != nil {
+			return nil, err
+		}
+		questions = append(questions, q)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	for i := range questions {
+		if err := r.hydrateQuestion(ctx, &questions[i]); err != nil {
+			return nil, err
+		}
+	}
+	return questions, nil
 }
 
 // ForQuiz يحمّل أسئلة اختبار معرَّف مسبقًا بترتيبها المحفوظ.
@@ -130,6 +172,47 @@ func (r *QuestionRepository) ByIDs(ctx context.Context, ids []string) (map[strin
 	byID := make(map[string]models.FullQuestion, len(questions))
 	for _, q := range questions {
 		byID[q.ID] = q
+	}
+	return byID, nil
+}
+
+// ByVersionIDs يحمّل أسئلة بنسخة محدَّدة بالضبط — يُستخدم لعرض/تصحيح محاولة
+// جمّدت نسخة أسئلتها عند بدئها (attempt_questions)، بصرف النظر عن حالة
+// السؤال الحالية (قد يكون عُدِّل أو أُرشِف لاحقًا؛ المحاولة تبقى صحيحة على
+// النسخة التي رآها الطالب فعلًا — راجع docs/question-model.md).
+func (r *QuestionRepository) ByVersionIDs(ctx context.Context, versionIDs []string) (map[string]models.FullQuestion, error) {
+	if len(versionIDs) == 0 {
+		return map[string]models.FullQuestion{}, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT q.id, qv.id, q.question_type, qv.body, COALESCE(qv.explanation, '')
+		FROM question_versions qv
+		JOIN questions q ON q.id = qv.question_id
+		WHERE qv.id = ANY($1)
+	`, versionIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []models.FullQuestion
+	for rows.Next() {
+		var q models.FullQuestion
+		if err := rows.Scan(&q.ID, &q.VersionID, &q.Type, &q.Body, &q.Explanation); err != nil {
+			return nil, err
+		}
+		questions = append(questions, q)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	byID := make(map[string]models.FullQuestion, len(questions))
+	for i := range questions {
+		if err := r.hydrateQuestion(ctx, &questions[i]); err != nil {
+			return nil, err
+		}
+		byID[questions[i].ID] = questions[i]
 	}
 	return byID, nil
 }

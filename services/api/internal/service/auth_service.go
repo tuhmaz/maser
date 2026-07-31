@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/alemedu/api/internal/config"
 	"github.com/alemedu/api/internal/email"
 	"github.com/alemedu/api/internal/models"
@@ -18,17 +20,27 @@ import (
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
-const passwordResetTTL = 1 * time.Hour
+const (
+	passwordResetTTL     = 1 * time.Hour
+	emailVerificationTTL = 24 * time.Hour
+)
 
 type AuthService struct {
-	cfg      *config.Config
-	users    *repository.UserRepository
-	sessions *repository.SessionRepository
-	mailer   *email.Sender
+	cfg            *config.Config
+	db             *pgxpool.Pool // لبناء مُرسِل البريد ديناميكيًا من إعدادات الموقع عند كل إرسال
+	users          *repository.UserRepository
+	sessions       *repository.SessionRepository
+	mailerFallback email.Config
 }
 
-func NewAuthService(cfg *config.Config, users *repository.UserRepository, sessions *repository.SessionRepository, mailer *email.Sender) *AuthService {
-	return &AuthService{cfg: cfg, users: users, sessions: sessions, mailer: mailer}
+func NewAuthService(cfg *config.Config, db *pgxpool.Pool, users *repository.UserRepository, sessions *repository.SessionRepository, mailerFallback email.Config) *AuthService {
+	return &AuthService{cfg: cfg, db: db, users: users, sessions: sessions, mailerFallback: mailerFallback}
+}
+
+// mailer يبني مُرسِلًا طازجًا من إعدادات site_settings الحالية — يعكس أي تغيير
+// أجراه الأدمن من لوحة الإعدادات فورًا دون إعادة تشغيل الخادم.
+func (s *AuthService) mailer(ctx context.Context) *email.Sender {
+	return email.FromDB(ctx, s.db, s.mailerFallback)
 }
 
 type AuthResult struct {
@@ -37,22 +49,63 @@ type AuthResult struct {
 	User         *models.PublicUser
 }
 
-func (s *AuthService) Register(ctx context.Context, email, password, displayName, userAgent, ip string) (*AuthResult, error) {
+// Register ينشئ حسابًا ويرسل رابط تفعيل البريد (docs الجديدة: تفعيل الإيميل عند
+// إنشاء الحساب). لا يمنع الدخول قبل التفعيل — التفعيل إثبات ملكية بريد، وليس بوابة أمان صارمة هنا.
+func (s *AuthService) Register(ctx context.Context, emailAddr, password, displayName, userAgent, ip string) (*AuthResult, error) {
 	hash, err := utils.HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
 
-	user, err := s.users.CreateStudent(ctx, email, hash, displayName)
+	user, err := s.users.CreateStudent(ctx, emailAddr, hash, displayName)
 	if err != nil {
 		return nil, err
 	}
 
+	s.sendVerificationEmail(ctx, user)
+
 	return s.issueTokens(ctx, user, userAgent, ip)
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password, userAgent, ip string) (*AuthResult, error) {
-	user, err := s.users.FindByEmail(ctx, email)
+func (s *AuthService) sendVerificationEmail(ctx context.Context, user *models.User) {
+	rawToken, err := generateOpaqueToken()
+	if err != nil {
+		return
+	}
+	if err := s.users.CreateEmailVerificationToken(ctx, user.ID, hashResetToken(rawToken), emailVerificationTTL); err != nil {
+		return
+	}
+	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.cfg.WebBaseURL, rawToken)
+	_ = s.mailer(ctx).SendVerification(user.Email, verifyURL)
+}
+
+// VerifyEmail يستهلك رمز التفعيل ويعلّم البريد موثَّقًا.
+func (s *AuthService) VerifyEmail(ctx context.Context, rawToken string) error {
+	_, err := s.users.ConsumeEmailVerificationToken(ctx, hashResetToken(rawToken))
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrInvalidCredentials
+		}
+		return err
+	}
+	return nil
+}
+
+// ResendVerification يعيد إرسال رابط التفعيل لمستخدم مسجَّل دخوله لم يفعِّل بريده بعد.
+func (s *AuthService) ResendVerification(ctx context.Context, userID string) error {
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.EmailVerifiedAt != nil {
+		return nil // مفعَّل مسبقًا: لا حاجة لإرسال جديد
+	}
+	s.sendVerificationEmail(ctx, user)
+	return nil
+}
+
+func (s *AuthService) Login(ctx context.Context, emailAddr, password, userAgent, ip string) (*AuthResult, error) {
+	user, err := s.users.FindByEmail(ctx, emailAddr)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrInvalidCredentials
@@ -75,6 +128,13 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken, userAgent, ip s
 
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	// Login يتحقق من is_active، لكن Refresh لم يكن يتحقق منها — حساب عُطِّل
+	// بعد إصدار جلسته كان يستطيع تجديد رمز الوصول إلى ما لا نهاية طالما
+	// يحتفظ بـ refresh token صالح. نُلغي كل جلساته أيضًا حتى لا يُعاد المحاولة.
+	if !user.IsActive {
+		_ = s.sessions.RevokeAllForUser(ctx, userID)
 		return nil, ErrInvalidCredentials
 	}
 
@@ -134,7 +194,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, emailAddr string) {
 	}
 
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.cfg.WebBaseURL, rawToken)
-	_ = s.mailer.SendPasswordReset(user.Email, resetURL)
+	_ = s.mailer(ctx).SendPasswordReset(user.Email, resetURL)
 }
 
 // ResetPassword يستهلك رمز الاستعادة، يحدّث كلمة المرور، ويلغي كل الجلسات القديمة.
@@ -211,7 +271,43 @@ func (s *AuthService) toPublicUser(ctx context.Context, user *models.User) (*mod
 		DisplayName:         user.DisplayName,
 		Role:                role,
 		OnboardingCompleted: onboarded,
+		EmailVerified:       user.EmailVerifiedAt != nil,
 	}, nil
+}
+
+// FindOrCreateFromOAuth يبحث عن مستخدم مرتبط بحساب Google/Facebook، أو ينشئ
+// حسابًا جديدًا موثَّق البريد فورًا (المزوّد يضمن ملكية البريد) ويربطه.
+// بريد مسجَّل مسبقًا بكلمة مرور يُربَط بنفس الحساب بدل إنشاء مكرَّر.
+func (s *AuthService) FindOrCreateFromOAuth(ctx context.Context, provider, providerUserID, emailAddr, displayName, userAgent, ip string) (*AuthResult, error) {
+	if user, err := s.users.FindByOAuth(ctx, provider, providerUserID); err == nil {
+		return s.issueTokens(ctx, user, userAgent, ip)
+	} else if !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
+
+	user, err := s.users.FindByEmail(ctx, emailAddr)
+	if err != nil {
+		if !errors.Is(err, repository.ErrNotFound) {
+			return nil, err
+		}
+		randomPassword, genErr := generateOpaqueToken()
+		if genErr != nil {
+			return nil, genErr
+		}
+		hash, hashErr := utils.HashPassword(randomPassword)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		user, err = s.users.CreateStudentVerified(ctx, emailAddr, hash, displayName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.users.LinkOAuthAccount(ctx, user.ID, provider, providerUserID, emailAddr); err != nil {
+		return nil, err
+	}
+	return s.issueTokens(ctx, user, userAgent, ip)
 }
 
 func generateOpaqueToken() (string, error) {

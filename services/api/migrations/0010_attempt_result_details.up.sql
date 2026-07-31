@@ -1,4 +1,4 @@
--- 0008_attempt_result_details.up.sql
+-- 0010_attempt_result_details.up.sql
 -- تفاصيل نتيجة المحاولة على مستوى المهارة + تفسير التصنيف (شرط قبول docs/mastery-model.md:
 -- "يجب أن يستطيع النظام تفسير سبب التصنيف" — لا يكفي رقم غامض).
 

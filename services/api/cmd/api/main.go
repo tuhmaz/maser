@@ -32,7 +32,11 @@ func main() {
 
 	app.Use(recover.New())
 	app.Use(logger.New())
-	app.Use(helmet.New()) // رؤوس أمنية: X-Frame-Options, X-Content-Type-Options, CSP أساسي، إلخ
+	app.Use(helmet.New(helmet.Config{
+		// الافتراضي "same-origin" يمنع متصفح تطبيقي الطالب/الإدارة (منفذان مختلفان)
+		// من عرض صور العلامة التجارية/الأسئلة المرفوعة على هذا الخادم.
+		CrossOriginResourcePolicy: "cross-origin",
+	})) // رؤوس أمنية: X-Frame-Options, X-Content-Type-Options, CSP أساسي، إلخ
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(cfg.CORSAllowedOrigins, ","),
 		AllowCredentials: true,

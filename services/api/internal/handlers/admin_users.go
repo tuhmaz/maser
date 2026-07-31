@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/alemedu/api/internal/audit"
@@ -74,11 +77,28 @@ var assignableRoles = map[string]bool{
 // من هذا المسار — لا يُمنح إلا عبر scripts/create-admin.sh مباشرة على الخادم.
 func (h *AdminUsersHandler) ChangeRole(c *fiber.Ctx) error {
 	actorID, _ := middleware.UserIDFromContext(c)
+	actorRole, _ := middleware.RoleFromContext(c)
 	targetID := c.Params("id")
 
 	var req changeRoleRequest
 	if err := c.BodyParser(&req); err != nil || !assignableRoles[req.Role] {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "role غير صالح")
+	}
+
+	// أدمن عادي لا يستطيع تعديل دور مستخدم يحمل حاليًا admin أو super_admin —
+	// وإلا استطاع أي admin تجريد admin آخر (أو super_admin) من صلاحياته.
+	// فقط super_admin يملك هذا الحق.
+	if actorRole != "super_admin" {
+		var currentRole string
+		err := h.db.QueryRow(c.Context(), `
+			SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1
+		`, targetID).Scan(&currentRole)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر التحقق من الدور الحالي")
+		}
+		if currentRole == "admin" || currentRole == "super_admin" {
+			return utils.ErrorResponse(c, fiber.StatusForbidden, "forbidden", "لا يملك دور admin صلاحية تعديل دور مستخدم إداري آخر")
+		}
 	}
 
 	tx, err := h.db.Begin(c.Context())

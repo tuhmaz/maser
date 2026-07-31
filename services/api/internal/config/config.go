@@ -1,12 +1,15 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
 )
+
+const minProductionSecretLen = 32
 
 // Config يحمل كل الإعدادات المقروءة من البيئة.
 // راجع docs/deployment-plan.md: لا تُحفظ الأسرار في الكود أبدًا.
@@ -24,23 +27,38 @@ type Config struct {
 
 	CORSAllowedOrigins []string
 
-	SMTPHost string
-	SMTPPort string
-	SMTPUser string
-	SMTPPass string
-	SMTPFrom string
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPass     string
+	SMTPFrom     string
+	SMTPFromName string
 
 	WebBaseURL string // لبناء روابط استعادة كلمة المرور (docs/api-contract.md)
 
+	// CookieDomain نطاق كوكي رمز التحديث — فارغ افتراضيًا (host-only، يكفي في
+	// التطوير المحلي). في الإنتاج يُضبط لنطاق أب مشترك (مثل ".alemedu.com")
+	// إن كانت الواجهة والـAPI على نطاقات فرعية مختلفة.
+	CookieDomain string
+
 	StorageDir     string // مجلد رفع الملفات المحلي (docs/database-design.md: Object Storage)
 	PublicAssetURL string // القاعدة العامة لعرض الملفات المرفوعة
+
+	// تسجيل الدخول عبر Google/Facebook — فارغة افتراضيًا (جاهزية بلا تفعيل).
+	// راجع services/api/internal/handlers/oauth.go لكيفية التحقق من التفعيل.
+	GoogleClientID       string
+	GoogleClientSecret   string
+	GoogleRedirectURL    string
+	FacebookClientID     string
+	FacebookClientSecret string
+	FacebookRedirectURL  string
 }
 
 // Load يقرأ ملف .env إن وُجد (للتطوير المحلي فقط) ثم يقرأ متغيرات البيئة الفعلية.
 func Load() *Config {
 	_ = godotenv.Load() // تجاهل الخطأ: في staging/production تُمرَّر القيم عبر systemd/environment مباشرة
 
-	return &Config{
+	cfg := &Config{
 		AppEnv:  getEnv("APP_ENV", "development"),
 		AppPort: getEnv("APP_PORT", "8080"),
 
@@ -54,16 +72,43 @@ func Load() *Config {
 
 		CORSAllowedOrigins: strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"), ","),
 
-		SMTPHost: getEnv("SMTP_HOST", ""),
-		SMTPPort: getEnv("SMTP_PORT", "587"),
-		SMTPUser: getEnv("SMTP_USER", ""),
-		SMTPPass: getEnv("SMTP_PASS", ""),
-		SMTPFrom: getEnv("SMTP_FROM", "no-reply@alemedu.com"),
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnv("SMTP_PORT", "587"),
+		SMTPUser:     getEnv("SMTP_USER", ""),
+		SMTPPass:     getEnv("SMTP_PASS", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", "no-reply@alemedu.com"),
+		SMTPFromName: getEnv("SMTP_FROM_NAME", "Alemedu"),
 
-		WebBaseURL: getEnv("WEB_BASE_URL", "http://localhost:3000"),
+		WebBaseURL:   getEnv("WEB_BASE_URL", "http://localhost:3000"),
+		CookieDomain: getEnv("COOKIE_DOMAIN", ""),
 
 		StorageDir:     getEnv("STORAGE_DIR", "./storage"),
 		PublicAssetURL: getEnv("PUBLIC_ASSET_URL", "http://localhost:8080/assets"),
+
+		GoogleClientID:       getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:    getEnv("GOOGLE_REDIRECT_URL", getEnv("API_BASE_URL", "http://localhost:8080")+"/auth/oauth/google/callback"),
+		FacebookClientID:     getEnv("FACEBOOK_CLIENT_ID", ""),
+		FacebookClientSecret: getEnv("FACEBOOK_CLIENT_SECRET", ""),
+		FacebookRedirectURL:  getEnv("FACEBOOK_REDIRECT_URL", getEnv("API_BASE_URL", "http://localhost:8080")+"/auth/oauth/facebook/callback"),
+	}
+
+	cfg.validateSecrets()
+	return cfg
+}
+
+// validateSecrets يمنع إقلاع الخادم بسرّ JWT فارغ أو ضعيف — توقيع HS256 بسرّ
+// فارغ/متوقَّع يسمح لأي مهاجم بتزوير رموز وصول صالحة (بما فيها دور super_admin).
+// راجع docs/security-requirements.md.
+func (c *Config) validateSecrets() {
+	if c.JWTAccessSecret == "" {
+		log.Fatal("JWT_ACCESS_SECRET غير مضبوط — لا يمكن تشغيل الخادم بسرّ توقيع فارغ (خطر تزوير الرموز)")
+	}
+	if c.IsProduction() && len(c.JWTAccessSecret) < minProductionSecretLen {
+		log.Fatalf("JWT_ACCESS_SECRET قصير جدًا للإنتاج — يجب %d حرفًا على الأقل", minProductionSecretLen)
+	}
+	if len(c.JWTAccessSecret) < minProductionSecretLen {
+		log.Printf("تحذير: JWT_ACCESS_SECRET أقصر من %d حرفًا — مقبول للتطوير المحلي فقط", minProductionSecretLen)
 	}
 }
 

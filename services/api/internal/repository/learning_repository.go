@@ -2,19 +2,26 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // LearningRepository يدير إتقان المهارات ودفتر الأخطاء وجدولة المراجعة والسلاسل.
 type LearningRepository struct {
-	db *pgxpool.Pool
+	db Querier
 }
 
 func NewLearningRepository(db *pgxpool.Pool) *LearningRepository {
 	return &LearningRepository{db: db}
+}
+
+// WithTx يعيد نسخة من المستودع تعمل داخل معاملة قائمة بدل المجمّع مباشرة.
+func (r *LearningRepository) WithTx(tx pgx.Tx) *LearningRepository {
+	return &LearningRepository{db: tx}
 }
 
 // MasteryState حالة إتقان محسوبة مع تفسيرها.
@@ -114,6 +121,22 @@ func reviewDelay(mistakeCount int) time.Duration {
 	default:
 		return 4 * time.Hour
 	}
+}
+
+// MistakeQuestionID يعيد معرّف السؤال المرتبط بخطأ (مع التحقق من الملكية) —
+// يُستخدم لتحميل السؤال كاملًا وتصحيح إجابة المراجعة داخل الخادم.
+func (r *LearningRepository) MistakeQuestionID(ctx context.Context, userID, mistakeID string) (string, error) {
+	var questionID string
+	err := r.db.QueryRow(ctx, `
+		SELECT question_id FROM student_mistakes WHERE id = $1 AND user_id = $2
+	`, mistakeID, userID).Scan(&questionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return questionID, nil
 }
 
 // ReviewOutcome يسجّل نتيجة مراجعة خطأ ويعيد جدولته:

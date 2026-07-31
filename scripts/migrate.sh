@@ -39,8 +39,11 @@ cmd_up() {
       continue
     fi
     echo "==> تطبيق $version"
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (version) VALUES ('$version')"
+    # تنفيذ ملف الترحيل وتسجيله في schema_migrations ضمن معاملة واحدة عبر
+    # اتصال psql واحد (--single-transaction): فشل أي جزء يُلغي الآخر تلقائيًا،
+    # فلا تبقى القاعدة أبدًا "نصف مُرحَّلة" بلا سجل يعكس ذلك.
+    { cat "$file"; printf "\nINSERT INTO schema_migrations (version) VALUES ('%s');\n" "$version"; } \
+      | psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f -
   done
   echo "تم. قاعدة البيانات محدَّثة."
 }
@@ -58,8 +61,8 @@ cmd_down() {
     exit 1
   fi
   echo "==> التراجع عن $last"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$down_file"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM schema_migrations WHERE version = '$last'"
+  { cat "$down_file"; printf "\nDELETE FROM schema_migrations WHERE version = '%s';\n" "$last"; } \
+    | psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f -
   echo "تم التراجع عن $last."
 }
 

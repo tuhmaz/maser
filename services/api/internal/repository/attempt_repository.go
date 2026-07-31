@@ -14,21 +14,28 @@ import (
 var ErrAttemptFinished = errors.New("attempt already finished")
 
 type AttemptRepository struct {
-	db *pgxpool.Pool
+	db Querier
 }
 
 func NewAttemptRepository(db *pgxpool.Pool) *AttemptRepository {
 	return &AttemptRepository{db: db}
 }
 
-func (r *AttemptRepository) Create(ctx context.Context, userID string, quizID *string, attemptType string, questionOrder []string) (*models.Attempt, error) {
+// WithTx يعيد نسخة من المستودع تعمل داخل معاملة قائمة بدل المجمّع مباشرة.
+func (r *AttemptRepository) WithTx(tx pgx.Tx) *AttemptRepository {
+	return &AttemptRepository{db: tx}
+}
+
+// dailyTaskID غير nil فقط عند إنشاء محاولة من مهمة يومية — يُستخدم لاحقًا
+// لاستئناف نفس المحاولة بدل تكرارها، ولإكمال المهمة تلقائيًا عند التسليم.
+func (r *AttemptRepository) Create(ctx context.Context, userID string, quizID *string, attemptType string, questionOrder []string, dailyTaskID *string) (*models.Attempt, error) {
 	var a models.Attempt
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO attempts (user_id, quiz_id, attempt_type, question_order)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, user_id, quiz_id, attempt_type, status, question_order, started_at, submitted_at
-	`, userID, quizID, attemptType, questionOrder).Scan(
-		&a.ID, &a.UserID, &a.QuizID, &a.Type, &a.Status, &a.QuestionOrder, &a.StartedAt, &a.SubmittedAt,
+		INSERT INTO attempts (user_id, quiz_id, attempt_type, question_order, daily_task_id)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, user_id, quiz_id, attempt_type, status, question_order, started_at, submitted_at, daily_task_id
+	`, userID, quizID, attemptType, questionOrder, dailyTaskID).Scan(
+		&a.ID, &a.UserID, &a.QuizID, &a.Type, &a.Status, &a.QuestionOrder, &a.StartedAt, &a.SubmittedAt, &a.DailyTaskID,
 	)
 	if err != nil {
 		return nil, err
@@ -44,10 +51,31 @@ func (r *AttemptRepository) Create(ctx context.Context, userID string, quizID *s
 func (r *AttemptRepository) GetForUser(ctx context.Context, attemptID, userID string) (*models.Attempt, error) {
 	var a models.Attempt
 	err := r.db.QueryRow(ctx, `
-		SELECT id, user_id, quiz_id, attempt_type, status, question_order, started_at, submitted_at
+		SELECT id, user_id, quiz_id, attempt_type, status, question_order, started_at, submitted_at, daily_task_id
 		FROM attempts WHERE id = $1 AND user_id = $2
 	`, attemptID, userID).Scan(
-		&a.ID, &a.UserID, &a.QuizID, &a.Type, &a.Status, &a.QuestionOrder, &a.StartedAt, &a.SubmittedAt,
+		&a.ID, &a.UserID, &a.QuizID, &a.Type, &a.Status, &a.QuestionOrder, &a.StartedAt, &a.SubmittedAt, &a.DailyTaskID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
+}
+
+// FindInProgressByDailyTask يبحث عن محاولة قائمة لهذه المهمة اليومية تحديدًا —
+// يمنع إنشاء محاولة مكررة عند إعادة الضغط على "ابدأ" لنفس المهمة.
+func (r *AttemptRepository) FindInProgressByDailyTask(ctx context.Context, userID, dailyTaskID string) (*models.Attempt, error) {
+	var a models.Attempt
+	err := r.db.QueryRow(ctx, `
+		SELECT id, user_id, quiz_id, attempt_type, status, question_order, started_at, submitted_at, daily_task_id
+		FROM attempts
+		WHERE user_id = $1 AND daily_task_id = $2 AND status = 'in_progress'
+		ORDER BY created_at DESC LIMIT 1
+	`, userID, dailyTaskID).Scan(
+		&a.ID, &a.UserID, &a.QuizID, &a.Type, &a.Status, &a.QuestionOrder, &a.StartedAt, &a.SubmittedAt, &a.DailyTaskID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -84,6 +112,43 @@ func (r *AttemptRepository) SaveAnswer(ctx context.Context, attemptID string, q 
 		VALUES ($1, 'answer_saved', jsonb_build_object('questionId', $2::text))
 	`, attemptID, q.ID)
 	return nil
+}
+
+// CreateQuestionVersions يجمّد نسخة كل سؤال عند بدء المحاولة — أي تعديل أو
+// إعادة نشر لاحقة للسؤال لا تؤثر على هذه المحاولة (docs/question-model.md).
+func (r *AttemptRepository) CreateQuestionVersions(ctx context.Context, attemptID string, questions []models.FullQuestion) error {
+	for i, q := range questions {
+		if _, err := r.db.Exec(ctx, `
+			INSERT INTO attempt_questions (attempt_id, question_id, question_version_id, "order")
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (attempt_id, question_id) DO NOTHING
+		`, attemptID, q.ID, q.VersionID, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// QuestionVersionIDs يعيد نسخة كل سؤال المجمَّدة عند بدء هذه المحاولة تحديدًا
+// (question_id → question_version_id). محاولات قديمة سابقة لهذا الإصلاح لن
+// يكون لها صفوف هنا — على المستدعي أن يتعامل مع الغياب برجوع احتياطي آمن.
+func (r *AttemptRepository) QuestionVersionIDs(ctx context.Context, attemptID string) (map[string]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT question_id, question_version_id FROM attempt_questions WHERE attempt_id = $1
+	`, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var qid, vid string
+		if err := rows.Scan(&qid, &vid); err != nil {
+			return nil, err
+		}
+		out[qid] = vid
+	}
+	return out, rows.Err()
 }
 
 // AnsweredQuestionIDs معرفات الأسئلة المجابة (لاستئناف المحاولة بعد انقطاع).

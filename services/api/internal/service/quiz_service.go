@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/alemedu/api/internal/models"
@@ -58,7 +59,7 @@ func (s *QuizService) StartDiagnostic(ctx context.Context, userID string) (*Atte
 		return nil, ErrNoQuestions
 	}
 
-	return s.createAttempt(ctx, userID, nil, "diagnostic", questions)
+	return s.createAttempt(ctx, userID, nil, "diagnostic", questions, nil)
 }
 
 // StartQuiz يبدأ اختبارًا معرَّفًا مسبقًا (درس/وحدة/مراجعة).
@@ -74,13 +75,15 @@ func (s *QuizService) StartQuiz(ctx context.Context, userID, quizID string) (*At
 	if len(questions) == 0 {
 		return nil, ErrNoQuestions
 	}
-	return s.createAttempt(ctx, userID, &quiz.ID, quiz.Type, questions)
+	return s.createAttempt(ctx, userID, &quiz.ID, quiz.Type, questions, nil)
 }
 
 // StartAdHocAttempt يبدأ محاولة على مجموعة أسئلة مختارة مسبقًا دون اختبار مُعرَّف
 // (quiz row) — تستخدمها المهمة اليومية لأسئلتها الجديدة واختبار التثبيت
 // (docs/daily-plan-rules.md). الأسئلة غير المنشورة أو المحذوفة تُتجاهَل بصمت.
-func (s *QuizService) StartAdHocAttempt(ctx context.Context, userID, attemptType string, questionIDs []string) (*AttemptView, error) {
+// dailyTaskID غير nil عند استدعائها من مهمة يومية — يربط المحاولة بالمهمة
+// لاستئنافها لاحقًا وإكمال المهمة تلقائيًا عند التسليم.
+func (s *QuizService) StartAdHocAttempt(ctx context.Context, userID, attemptType string, questionIDs []string, dailyTaskID *string) (*AttemptView, error) {
 	byID, err := s.questions.ByIDs(ctx, questionIDs)
 	if err != nil {
 		return nil, err
@@ -94,17 +97,21 @@ func (s *QuizService) StartAdHocAttempt(ctx context.Context, userID, attemptType
 	if len(questions) == 0 {
 		return nil, ErrNoQuestions
 	}
-	return s.createAttempt(ctx, userID, nil, attemptType, questions)
+	return s.createAttempt(ctx, userID, nil, attemptType, questions, dailyTaskID)
 }
 
-func (s *QuizService) createAttempt(ctx context.Context, userID string, quizID *string, attemptType string, questions []models.FullQuestion) (*AttemptView, error) {
+func (s *QuizService) createAttempt(ctx context.Context, userID string, quizID *string, attemptType string, questions []models.FullQuestion, dailyTaskID *string) (*AttemptView, error) {
 	order := make([]string, len(questions))
 	for i, q := range questions {
 		order[i] = q.ID
 	}
 
-	attempt, err := s.attempts.Create(ctx, userID, quizID, attemptType, order)
+	attempt, err := s.attempts.Create(ctx, userID, quizID, attemptType, order, dailyTaskID)
 	if err != nil {
+		return nil, err
+	}
+	// تجميد نسخة كل سؤال الآن — أي تعديل/نشر لاحق للسؤال لن يمس هذه المحاولة.
+	if err := s.attempts.CreateQuestionVersions(ctx, attempt.ID, questions); err != nil {
 		return nil, err
 	}
 
@@ -115,6 +122,47 @@ func (s *QuizService) createAttempt(ctx context.Context, userID string, quizID *
 	return &AttemptView{Attempt: attempt, Questions: sanitized}, nil
 }
 
+// loadFrozenQuestions يحمّل أسئلة المحاولة بالنسخة المجمَّدة عند بدئها (وليس
+// أي تعديل لاحق). محاولات قديمة بلا صفوف attempt_questions (قبل هذا الإصلاح)
+// ترجع احتياطيًا للنسخة المنشورة الحالية حتى لا تنكسر.
+func (s *QuizService) loadFrozenQuestions(ctx context.Context, attemptID string, questionIDs []string) (map[string]models.FullQuestion, error) {
+	versionByQuestion, err := s.attempts.QuestionVersionIDs(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+
+	versionIDs := make([]string, 0, len(questionIDs))
+	var missing []string
+	for _, qid := range questionIDs {
+		if vid, ok := versionByQuestion[qid]; ok {
+			versionIDs = append(versionIDs, vid)
+		} else {
+			missing = append(missing, qid)
+		}
+	}
+
+	result, err := s.questions.ByVersionIDs(ctx, versionIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		fallback, err := s.questions.ByIDs(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		for id, q := range fallback {
+			result[id] = q
+		}
+	}
+	return result, nil
+}
+
+// AttemptForDailyTask يبحث عن محاولة قائمة (in_progress) بدأت من مهمة يومية
+// محددة — يسمح لطبقة الخطة اليومية باستئناف نفس المحاولة بدل تكرارها.
+func (s *QuizService) AttemptForDailyTask(ctx context.Context, userID, dailyTaskID string) (*models.Attempt, error) {
+	return s.attempts.FindInProgressByDailyTask(ctx, userID, dailyTaskID)
+}
+
 // GetAttempt يعيد المحاولة بأسئلتها المنقّاة وحالة "أجيب/لم يُجب" لكل سؤال —
 // يسمح للطالب بالعودة بعد انقطاع الاتصال واستئناف الحل من حيث توقف.
 func (s *QuizService) GetAttempt(ctx context.Context, userID, attemptID string) (*AttemptView, error) {
@@ -123,7 +171,7 @@ func (s *QuizService) GetAttempt(ctx context.Context, userID, attemptID string) 
 		return nil, err
 	}
 
-	byID, err := s.questions.ByIDs(ctx, attempt.QuestionOrder)
+	byID, err := s.loadFrozenQuestions(ctx, attemptID, attempt.QuestionOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +211,7 @@ func (s *QuizService) SaveAnswer(ctx context.Context, userID, attemptID, questio
 		return ErrQuestionNotInAttempt
 	}
 
-	byID, err := s.questions.ByIDs(ctx, []string{questionID})
+	byID, err := s.loadFrozenQuestions(ctx, attemptID, []string{questionID})
 	if err != nil {
 		return err
 	}
@@ -182,21 +230,60 @@ func (s *QuizService) SaveAnswer(ctx context.Context, userID, attemptID, questio
 
 // Submit يقفل المحاولة، يحسب النتيجة، يحدّث المهارات، ينشئ أخطاء المراجعة،
 // ويحدّث سلسلة الأيام — كل ذلك داخل الخادم.
+//
+// كل الخطوات من قفل المحاولة حتى حفظ النتيجة تُنفَّذ داخل معاملة واحدة: فشل
+// أي خطوة (مثلًا انقطاع الاتصال بعد التصحيح وقبل الحفظ) يُلغي كل شيء، فلا
+// تبقى محاولة "submitted" بلا نتيجة يستحيل استرجاعها لاحقًا. القفل الصفّي
+// على تحديث حالة المحاولة (MarkSubmitted) يمنع أيضًا تنفيذ طلبي تسليم
+// متزامنين لنفس المحاولة مرتين.
 func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*models.AttemptResult, error) {
 	attempt, err := s.attempts.GetForUser(ctx, attemptID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.attempts.MarkSubmitted(ctx, attemptID); err != nil {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) // لا تأثير له بعد Commit ناجح
+
+	attemptsTx := s.attempts.WithTx(tx)
+	learningTx := s.learning.WithTx(tx)
+
+	if err := attemptsTx.MarkSubmitted(ctx, attemptID); err != nil {
 		if errors.Is(err, repository.ErrAttemptFinished) {
-			// تسليم مكرر: أعد النتيجة المحفوظة نفسها (idempotency)
+			// تسليم مكرر أو متزامن: النتيجة محفوظة أصلًا من التسليم الأول
+			// (idempotency) — تُقرأ خارج هذه المعاملة الفارغة.
 			return s.attempts.GetResult(ctx, attemptID)
 		}
 		return nil, err
 	}
 
-	answers, err := s.attempts.LoadAnswers(ctx, attemptID)
+	// الأسئلة التي لم يُجب عنها الطالب إطلاقًا كانت تُستبعَد بالكامل من حساب
+	// الإتقان ودفتر الأخطاء (كأنها لم تُعرَض عليه أصلًا). نسجّلها الآن صراحةً
+	// كإجابات خاطئة قبل التصحيح، فتدخل في كل الحسابات التالية تلقائيًا
+	// (docs/mastery-model.md: السؤال المتروك يجب أن يُضعف تقدير الإتقان).
+	allQuestions, err := s.loadFrozenQuestions(ctx, attemptID, attempt.QuestionOrder)
+	if err != nil {
+		return nil, err
+	}
+	answeredIDs, err := attemptsTx.AnsweredQuestionIDs(ctx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	for _, qid := range attempt.QuestionOrder {
+		if answeredIDs[qid] {
+			continue
+		}
+		if q, ok := allQuestions[qid]; ok {
+			if err := attemptsTx.SaveAnswer(ctx, attemptID, &q, json.RawMessage("null"), false, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	answers, err := attemptsTx.LoadAnswers(ctx, attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +308,7 @@ func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*mo
 		}
 	}
 
-	totalCount := len(attempt.QuestionOrder) // الأسئلة غير المجابة تُحسب ضمن الإجمالي
+	totalCount := len(attempt.QuestionOrder)
 	score := 0.0
 	if totalCount > 0 {
 		score = float64(correctCount) / float64(totalCount) * 100
@@ -240,7 +327,7 @@ func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*mo
 	breakdown := make([]models.SkillResult, 0, len(skillIDs))
 	for _, skillID := range skillIDs {
 		agg := perSkill[skillID]
-		state, reason, err := s.learning.RecordSkillOutcome(ctx, userID, skillID, agg.correct, agg.total-agg.correct)
+		state, reason, err := learningTx.RecordSkillOutcome(ctx, userID, skillID, agg.correct, agg.total-agg.correct)
 		if err != nil {
 			return nil, err
 		}
@@ -254,12 +341,36 @@ func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*mo
 		})
 	}
 
-	// دفتر الأخطاء: كل إجابة خاطئة تتحول لعنصر مراجعة مجدول
-	if err := s.recordMistakes(ctx, userID, attemptID); err != nil {
+	// دفتر الأخطاء: كل إجابة خاطئة (بما فيها الأسئلة المتروكة أعلاه) تتحول لعنصر مراجعة مجدول
+	if err := s.recordMistakes(ctx, tx, learningTx, userID, attemptID); err != nil {
 		return nil, err
 	}
 
-	// الإنجازات (docs/daily-plan-rules.md §نظام الإنجازات): المنح آمن للاستدعاء المتكرر
+	result := &models.AttemptResult{
+		AttemptID:      attemptID,
+		Score:          score,
+		CorrectCount:   correctCount,
+		TotalCount:     totalCount,
+		SkillBreakdown: breakdown,
+	}
+	if err := attemptsTx.SaveResult(ctx, result); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	// إن كانت هذه المحاولة بدأت من مهمة يومية (StartAdHocAttempt عبر daily-plan)،
+	// أكمل المهمة تلقائيًا الآن — الطالب لم يعد يحتاج طلب /complete منفصل بعد
+	// التسليم (كان يمكن نسيانه من الواجهة فتبقى المهمة "قيد التنفيذ" أبدًا).
+	if attempt.DailyTaskID != nil {
+		_ = s.completeLinkedDailyTask(ctx, *attempt.DailyTaskID)
+	}
+
+	// الإنجازات وسلسلة الأيام: تُنفَّذ بعد نجاح الالتزام فقط، بأثر جانبي آمن
+	// للاستدعاء المتكرر (docs/daily-plan-rules.md §نظام الإنجازات) — لا حاجة
+	// لتضمينها في نفس المعاملة الحرجة أعلاه.
 	if streak, err := s.learning.TouchStreak(ctx, userID); err == nil {
 		s.achievements.CheckStreak(ctx, userID, streak)
 	}
@@ -271,21 +382,25 @@ func (s *QuizService) Submit(ctx context.Context, userID, attemptID string) (*mo
 		}
 	}
 
-	result := &models.AttemptResult{
-		AttemptID:      attemptID,
-		Score:          score,
-		CorrectCount:   correctCount,
-		TotalCount:     totalCount,
-		SkillBreakdown: breakdown,
-	}
-	if err := s.attempts.SaveResult(ctx, result); err != nil {
-		return nil, err
-	}
 	return result, nil
 }
 
-func (s *QuizService) recordMistakes(ctx context.Context, userID, attemptID string) error {
-	rows, err := s.db.Query(ctx, `
+// completeLinkedDailyTask يُكمل مهمة يومية مرتبطة بمحاولة سُلِّمت للتو —
+// idempotent بفضل فهرس task_completions الفريد (ON CONFLICT DO NOTHING).
+func (s *QuizService) completeLinkedDailyTask(ctx context.Context, dailyTaskID string) error {
+	if _, err := s.db.Exec(ctx, `
+		UPDATE daily_tasks SET status = 'completed' WHERE id = $1 AND status <> 'completed'
+	`, dailyTaskID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO task_completions (daily_task_id) VALUES ($1) ON CONFLICT (daily_task_id) DO NOTHING
+	`, dailyTaskID)
+	return err
+}
+
+func (s *QuizService) recordMistakes(ctx context.Context, tx pgx.Tx, learningTx *repository.LearningRepository, userID, attemptID string) error {
+	rows, err := tx.Query(ctx, `
 		SELECT aa.id, aa.question_id, qs.skill_id
 		FROM attempt_answers aa
 		JOIN question_skills qs ON qs.question_id = aa.question_id
@@ -315,7 +430,7 @@ func (s *QuizService) recordMistakes(ctx context.Context, userID, attemptID stri
 			continue
 		}
 		seen[m.questionID] = true
-		if err := s.learning.RecordMistake(ctx, userID, m.questionID, m.skillID, m.answerID); err != nil {
+		if err := learningTx.RecordMistake(ctx, userID, m.questionID, m.skillID, m.answerID); err != nil {
 			return err
 		}
 	}

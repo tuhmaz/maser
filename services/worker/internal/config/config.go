@@ -9,9 +9,9 @@ import (
 )
 
 type Config struct {
-	AppEnv       string
-	DatabaseURL  string
-	JobInterval  time.Duration
+	AppEnv      string
+	DatabaseURL string
+	JobInterval time.Duration
 }
 
 func Load() *Config {

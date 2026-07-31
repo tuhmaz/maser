@@ -61,6 +61,9 @@ func (h *DailyPlanHandler) StartTask(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrNoQuestions) {
 			return utils.ErrorResponse(c, fiber.StatusConflict, "no_questions", "لا توجد أسئلة متاحة لهذه المهمة")
 		}
+		if errors.Is(err, service.ErrTaskFinished) {
+			return utils.ErrorResponse(c, fiber.StatusConflict, "task_finished", "هذه المهمة مكتملة بالفعل")
+		}
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء المهمة")
 	}
 	return c.JSON(result)

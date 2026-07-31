@@ -62,6 +62,7 @@ type Attempt struct {
 	QuestionOrder []string   `json:"questionOrder"`
 	StartedAt     time.Time  `json:"startedAt"`
 	SubmittedAt   *time.Time `json:"submittedAt,omitempty"`
+	DailyTaskID   *string    `json:"-"` // للربط الداخلي فقط؛ يُستخدم لإكمال المهمة تلقائيًا عند التسليم
 }
 
 // SkillResult نتيجة مهارة واحدة ضمن تقرير المحاولة، مع تفسير مفهوم

@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5"
@@ -50,23 +53,31 @@ func (h *AdminQuestionsHandler) List(c *fiber.Ctx) error {
 	lessonID := c.Query("lessonId")
 	search := c.Query("q")
 
+	// usage/error-rate وعدد البلاغات المفتوحة يُحسبان بـ subqueries منفصلة —
+	// ضمّهما في نفس الاستعلام عبر JOIN مباشر مع GROUP BY كان يضاعف الصفوف
+	// (كل تركيبة إجابة×بلاغ صف مستقل) فيظهر usageCount/openReports أكبر من
+	// الحقيقة (تقرير المراجعة §9.5).
 	query := `
 		SELECT q.id, q.lesson_id, l.name, q.question_type, q.difficulty, q.status,
 		       qv.body,
-		       COUNT(aa.id) AS usage_count,
-		       CASE WHEN COUNT(aa.id) = 0 THEN NULL
-		            ELSE COUNT(aa.id) FILTER (WHERE aa.is_correct = false)::float / COUNT(aa.id) END,
-		       COUNT(qr.id) FILTER (WHERE qr.status = 'open')
+		       COALESCE(u.usage_count, 0),
+		       CASE WHEN COALESCE(u.usage_count, 0) = 0 THEN NULL ELSE u.wrong_count::float / u.usage_count END,
+		       COALESCE(r.open_reports, 0)
 		FROM questions q
 		JOIN lessons l ON l.id = q.lesson_id
 		JOIN question_versions qv ON qv.question_id = q.id
 		  AND qv.version_number = (SELECT MAX(version_number) FROM question_versions WHERE question_id = q.id)
-		LEFT JOIN attempt_answers aa ON aa.question_id = q.id
-		LEFT JOIN question_reports qr ON qr.question_id = q.id
+		LEFT JOIN (
+			SELECT question_id, COUNT(*) AS usage_count, COUNT(*) FILTER (WHERE is_correct = false) AS wrong_count
+			FROM attempt_answers GROUP BY question_id
+		) u ON u.question_id = q.id
+		LEFT JOIN (
+			SELECT question_id, COUNT(*) AS open_reports
+			FROM question_reports WHERE status = 'open' GROUP BY question_id
+		) r ON r.question_id = q.id
 		WHERE ($1 = '' OR q.status = $1)
 		  AND ($2 = '' OR q.lesson_id::text = $2)
 		  AND ($3 = '' OR qv.body ILIKE '%' || $3 || '%')
-		GROUP BY q.id, q.lesson_id, l.name, q.question_type, q.difficulty, q.status, qv.body
 		ORDER BY q.created_at DESC
 		LIMIT 200
 	`
@@ -189,8 +200,11 @@ type saveQuestionRequest struct {
 	SkillIDs        []string            `json:"skillIds"`
 }
 
+// validate يفرض قواعد صارمة لكل نوع سؤال (تقرير المراجعة §9.2) — كانت
+// الفحوصات السابقة تسمح مثلًا بأكثر من إجابة صحيحة لسؤال single_choice، أو
+// true_false بأكثر من خيارين، أو خيارات فارغة/مكررة، أو tolerance سالبة.
 func (r *saveQuestionRequest) validate() string {
-	if r.Body == "" {
+	if strings.TrimSpace(r.Body) == "" {
 		return "نص السؤال مطلوب"
 	}
 	if !validQuestionTypes[r.Type] {
@@ -199,25 +213,61 @@ func (r *saveQuestionRequest) validate() string {
 	if r.Difficulty != "" && !validDifficulties[r.Difficulty] {
 		return "الصعوبة يجب أن تكون easy/medium/hard"
 	}
+	if r.ExpectedTimeSec != 0 && (r.ExpectedTimeSec < 5 || r.ExpectedTimeSec > 900) {
+		return "الوقت المتوقع للسؤال يجب أن يكون بين 5 و900 ثانية"
+	}
+
 	switch r.Type {
 	case "single_choice", "true_false", "multi_select", "ordering":
 		if len(r.Options) < 2 {
 			return "يلزم خياران على الأقل"
 		}
-		if r.Type != "ordering" {
-			hasCorrect := false
-			for _, o := range r.Options {
-				if o.IsCorrect {
-					hasCorrect = true
-				}
+		seenText := map[string]bool{}
+		correctCount := 0
+		for _, o := range r.Options {
+			text := strings.TrimSpace(o.Text)
+			if text == "" {
+				return "لا يمكن أن يحتوي خيار على نص فارغ"
 			}
-			if !hasCorrect {
-				return "يجب تحديد إجابة صحيحة واحدة على الأقل"
+			if seenText[text] {
+				return "لا يمكن تكرار نص نفس الخيار أكثر من مرة"
+			}
+			seenText[text] = true
+			if o.IsCorrect {
+				correctCount++
 			}
 		}
+		switch r.Type {
+		case "true_false":
+			if len(r.Options) != 2 {
+				return "سؤال صح/خطأ يجب أن يحتوي خيارين فقط لا أكثر"
+			}
+			if correctCount != 1 {
+				return "سؤال صح/خطأ يجب أن يحدد إجابة صحيحة واحدة فقط"
+			}
+		case "single_choice":
+			if correctCount != 1 {
+				return "سؤال الاختيار الواحد يجب أن يحدد إجابة صحيحة واحدة فقط لا أكثر ولا أقل"
+			}
+		case "multi_select":
+			if correctCount == 0 {
+				return "يجب تحديد إجابة صحيحة واحدة على الأقل"
+			}
+			if correctCount == len(r.Options) {
+				return "لا يمكن أن تكون كل الخيارات صحيحة في سؤال متعدد الإجابات"
+			}
+		case "ordering":
+			// الترتيب الصحيح هو ترتيب الخيارات كما أُدخلت (حقل order) — لا يلزم isCorrect
+		}
 	case "numeric_input":
-		if r.NumericAnswer == nil || *r.NumericAnswer == "" {
+		if r.NumericAnswer == nil || strings.TrimSpace(*r.NumericAnswer) == "" {
 			return "الإجابة العددية مطلوبة"
+		}
+		if _, err := strconv.ParseFloat(*r.NumericAnswer, 64); err != nil {
+			return "الإجابة العددية يجب أن تكون رقمًا صالحًا"
+		}
+		if r.Tolerance != nil && *r.Tolerance < 0 {
+			return "هامش الخطأ (tolerance) لا يمكن أن يكون سالبًا"
 		}
 	}
 	if len(r.SkillIDs) == 0 {
@@ -238,6 +288,9 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 	}
 	if msg := req.validate(); msg != "" {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", msg)
+	}
+	if msg := h.validateHierarchy(c, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.SkillIDs); msg != "" {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_hierarchy", msg)
 	}
 	if req.Difficulty == "" {
 		req.Difficulty = "medium"
@@ -292,19 +345,24 @@ func (h *AdminQuestionsHandler) Update(c *fiber.Ctx) error {
 
 	var latestVersion int
 	var publishedAt *string
-	var status string
+	var status, lessonID string
 	err := h.db.QueryRow(c.Context(), `
-		SELECT qv.version_number, qv.published_at::text, q.status
+		SELECT qv.version_number, qv.published_at::text, q.status, q.lesson_id
 		FROM questions q
 		JOIN question_versions qv ON qv.question_id = q.id
 		  AND qv.version_number = (SELECT MAX(version_number) FROM question_versions WHERE question_id = q.id)
 		WHERE q.id = $1
-	`, questionID).Scan(&latestVersion, &publishedAt, &status)
+	`, questionID).Scan(&latestVersion, &publishedAt, &status, &lessonID)
 	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "السؤال غير موجود")
 	}
 	if status == "archived" {
 		return utils.ErrorResponse(c, fiber.StatusConflict, "archived", "لا يمكن تعديل سؤال مؤرشف")
+	}
+	// الدرس/الوحدة/المادة/الصف ثابتة بعد الإنشاء (Update لا يغيّرها) — نتحقق فقط
+	// أن المهارات المُختارة حديثًا تنتمي فعليًا لهذا الدرس.
+	if msg := h.validateSkillsBelongToLesson(c.Context(), lessonID, req.SkillIDs); msg != "" {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_hierarchy", msg)
 	}
 
 	tx, err := h.db.Begin(c.Context())
@@ -333,9 +391,13 @@ func (h *AdminQuestionsHandler) Update(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_skill", "تعذّر ربط المهارات")
 	}
 
+	// أي تعديل محتوى بينما السؤال in_review أو approved يجب أن يعيده لدورة
+	// المراجعة — وإلا استطاع أدمن تعديل سؤال approved قبل نشره فيبقى approved
+	// وينشر لاحقًا بمحتوى لم يُراجَع إطلاقًا (كان يحدث سابقًا فقط عند التعديل
+	// بعد النشر الفعلي، لا قبله — راجع تقرير المراجعة §9.1).
 	newStatus := status
-	if newVersionCreated {
-		newStatus = "draft" // تعديل بعد النشر يعيد السؤال لدورة المراجعة قبل ظهوره من جديد
+	if newVersionCreated || status == "in_review" || status == "approved" {
+		newStatus = "draft"
 	}
 	if _, err := tx.Exec(c.Context(), `
 		UPDATE questions SET question_type = $2, difficulty = COALESCE(NULLIF($3, ''), difficulty),
@@ -350,6 +412,46 @@ func (h *AdminQuestionsHandler) Update(c *fiber.Ctx) error {
 	}
 	audit.Log(c.Context(), h.db, userID, "question.update", "question", questionID, map[string]any{"newVersion": newVersionCreated})
 	return c.JSON(fiber.Map{"updated": true, "newVersionCreated": newVersionCreated})
+}
+
+// validateHierarchy يتحقق أن الدرس فعليًا داخل الوحدة داخل المادة داخل الصف
+// المُرسَلة — الاعتماد على FK وحده لا يمنع مثلًا اختيار درس من مادة أخرى غير
+// المادة المحددة (كل FK صالح على حدة لكن السلسلة غير متطابقة). يتحقق أيضًا
+// من أن كل مهارة مرتبطة فعليًا بهذا الدرس (تقرير المراجعة §9.3/§9.4).
+func (h *AdminQuestionsHandler) validateHierarchy(c *fiber.Ctx, gradeID, subjectID, unitID, lessonID string, skillIDs []string) string {
+	var ok bool
+	err := h.db.QueryRow(c.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM lessons l
+			JOIN units u ON u.id = l.unit_id
+			JOIN subjects s ON s.id = u.subject_id
+			WHERE l.id = $1 AND u.id = $2 AND s.id = $3 AND s.grade_id = $4
+		)
+	`, lessonID, unitID, subjectID, gradeID).Scan(&ok)
+	if err != nil || !ok {
+		return "تسلسل الصف/المادة/الوحدة/الدرس غير متطابق فعليًا"
+	}
+	return h.validateSkillsBelongToLesson(c.Context(), lessonID, skillIDs)
+}
+
+func (h *AdminQuestionsHandler) validateSkillsBelongToLesson(ctx context.Context, lessonID string, skillIDs []string) string {
+	if len(skillIDs) == 0 {
+		return ""
+	}
+	unique := map[string]bool{}
+	for _, id := range skillIDs {
+		unique[id] = true
+	}
+	var matched int
+	if err := h.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT skill_id) FROM lesson_skills WHERE lesson_id = $1 AND skill_id = ANY($2)
+	`, lessonID, skillIDs).Scan(&matched); err != nil {
+		return "تعذّر التحقق من ربط المهارات بالدرس"
+	}
+	if matched != len(unique) {
+		return "كل مهارة مختارة يجب أن تكون مرتبطة فعليًا بدرس هذا السؤال"
+	}
+	return ""
 }
 
 func (h *AdminQuestionsHandler) writeVersion(c *fiber.Ctx, tx pgx.Tx, questionID string, versionNumber int, req saveQuestionRequest, userID string) error {
@@ -463,13 +565,18 @@ func (h *AdminQuestionsHandler) Publish(c *fiber.Ctx) error {
 	}
 	defer tx.Rollback(c.Context())
 
-	var lessonID string
+	var lessonID, questionType string
 	var maxVersion int
 	err = tx.QueryRow(c.Context(), `
-		SELECT lesson_id, current_version FROM questions WHERE id = $1 AND status = 'approved'
-	`, id).Scan(&lessonID, &maxVersion)
+		SELECT lesson_id, current_version, question_type FROM questions WHERE id = $1 AND status = 'approved'
+	`, id).Scan(&lessonID, &maxVersion, &questionType)
 	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusConflict, "invalid_transition", "لا يمكن نشر سؤال لم يُعتمَد بعد")
+	}
+	// matching لا يملك خوارزمية تصحيح مُنفَّذة بعد (service.Grade يرفضه) — نشره
+	// يكسر التسليم لأي طالب يصادفه. يُمنع حتى يُنفَّذ grader مخصص له.
+	if questionType == "matching" {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "unsupported_type", "نوع matching لا يملك تصحيحًا تلقائيًا بعد — لا يمكن نشره حاليًا")
 	}
 	if err := tx.QueryRow(c.Context(), `
 		SELECT MAX(version_number) FROM question_versions WHERE question_id = $1
