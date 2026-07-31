@@ -13,6 +13,7 @@ import (
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
 	"github.com/alemedu/api/internal/service"
+	"github.com/alemedu/api/internal/storage"
 	"github.com/alemedu/api/internal/utils"
 )
 
@@ -36,6 +37,10 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	}
 	settingsRepo := repository.NewSettingsRepository(db)
 
+	// تخزين محلي حاليًا؛ يمكن استبداله بتنفيذ S3 لاحقًا (docs/ai-curriculum-roadmap.md
+	// — E03) دون تغيير أي معالج يستهلك storage.Storage أدناه.
+	localStorage := storage.NewLocal(cfg.StorageDir, cfg.PublicAssetURL)
+
 	achievementService := service.NewAchievementService(db)
 	authService := service.NewAuthService(cfg, db, userRepo, sessionRepo, mailerFallback)
 	quizService := service.NewQuizService(db, questionRepo, attemptRepo, learningRepo, achievementService)
@@ -43,7 +48,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 
 	authHandler := handlers.NewAuthHandler(authService, db, cfg)
 	oauthHandler := handlers.NewOAuthHandler(cfg, authService)
-	settingsHandler := handlers.NewSettingsHandler(db, settingsRepo, cfg, cfg.StorageDir, cfg.PublicAssetURL)
+	settingsHandler := handlers.NewSettingsHandler(db, settingsRepo, cfg, localStorage)
 	curriculumHandler := handlers.NewCurriculumHandler(db)
 	onboardingHandler := handlers.NewOnboardingHandler(db)
 	quizHandler := handlers.NewQuizHandler(quizService, db)
@@ -53,7 +58,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	achievementsHandler := handlers.NewAchievementsHandler(db)
 	parentHandler := handlers.NewParentHandler(db)
 	redirectHandler := handlers.NewRedirectHandler(db, cfg)
-	uploadsHandler := handlers.NewUploadsHandler(db, cfg.StorageDir, cfg.PublicAssetURL)
+	uploadsHandler := handlers.NewUploadsHandler(db, localStorage)
 	featureFlagsHandler := handlers.NewFeatureFlagsHandler(db)
 
 	adminCurriculumHandler := handlers.NewAdminCurriculumHandler(db)
@@ -90,6 +95,8 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	})
 
 	// خدمة الملفات المرفوعة (صور الأسئلة) كملفات ثابتة — docs/database-design.md.
+	// هذا مسار خاص بتنفيذ storage.Local تحديدًا؛ تنفيذ S3 مستقبلي (اختياري)
+	// يعيد رابط الـbucket/CDN مباشرة عبر Storage.Save فلا يحتاج هذا المسار.
 	app.Static("/assets", cfg.StorageDir)
 
 	// الربط مع موقع الإيمان (docs/analytics-events.md) — لا يتطلب مصادقة.

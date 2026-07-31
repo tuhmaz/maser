@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,21 +12,21 @@ import (
 	"github.com/alemedu/api/internal/config"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/repository"
+	"github.com/alemedu/api/internal/storage"
 	"github.com/alemedu/api/internal/utils"
 )
 
 // SettingsHandler يدير هوية الموقع (اسم/شعار/عنوان/تواصل اجتماعي/بريد تواصل)
 // وإعدادات البريد الصادر — كلها قابلة للتعديل من لوحة الإدارة دون لمس الكود.
 type SettingsHandler struct {
-	db             *pgxpool.Pool // لسجل التدقيق فقط
-	repo           *repository.SettingsRepository
-	cfg            *config.Config
-	storageDir     string
-	publicAssetURL string
+	db    *pgxpool.Pool // لسجل التدقيق فقط
+	repo  *repository.SettingsRepository
+	cfg   *config.Config
+	store storage.Storage
 }
 
-func NewSettingsHandler(db *pgxpool.Pool, repo *repository.SettingsRepository, cfg *config.Config, storageDir, publicAssetURL string) *SettingsHandler {
-	return &SettingsHandler{db: db, repo: repo, cfg: cfg, storageDir: storageDir, publicAssetURL: publicAssetURL}
+func NewSettingsHandler(db *pgxpool.Pool, repo *repository.SettingsRepository, cfg *config.Config, store storage.Storage) *SettingsHandler {
+	return &SettingsHandler{db: db, repo: repo, cfg: cfg, store: store}
 }
 
 type publicSettingsDTO struct {
@@ -168,14 +167,10 @@ func (h *SettingsHandler) uploadBrandingImage(c *fiber.Ctx, field string) error 
 	}
 
 	relPath := filepath.ToSlash(filepath.Join("branding", uuid.NewString()+ext))
-	absPath := filepath.Join(h.storageDir, relPath)
-	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر تجهيز مجلد التخزين")
-	}
-	if err := c.SaveFile(file, absPath); err != nil {
+	url, err := h.store.Save(file, relPath)
+	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ الملف")
 	}
-	url := strings.TrimSuffix(h.publicAssetURL, "/") + "/" + relPath
 
 	input := repository.UpdateInput{}
 	if field == "logo" {

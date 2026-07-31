@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,21 +11,20 @@ import (
 
 	"github.com/alemedu/api/internal/audit"
 	"github.com/alemedu/api/internal/middleware"
+	"github.com/alemedu/api/internal/storage"
 	"github.com/alemedu/api/internal/utils"
 )
 
-// UploadsHandler يخزّن صور الأسئلة على قرص محلي تحت storageDir، ويصل إليها
-// المتصفح عبر publicBaseURL (مُقدَّم كملف ثابت من Fiber — راجع cmd/api/main.go).
+// UploadsHandler يخزّن صور الأسئلة عبر storage.Storage (محلي حاليًا، قابل
+// لاستبداله لاحقًا بتنفيذ S3 دون تغيير هذا المعالج — docs/ai-curriculum-roadmap.md، E03).
 // docs/database-design.md: Object Storage للصور، عدم تخزين الملفات داخل قاعدة البيانات.
-// في بيئة الإنتاج يُستبدل storageDir بخدمة تخزين سحابية حقيقية دون تغيير هذا العقد.
 type UploadsHandler struct {
-	db            *pgxpool.Pool
-	storageDir    string
-	publicBaseURL string
+	db    *pgxpool.Pool
+	store storage.Storage
 }
 
-func NewUploadsHandler(db *pgxpool.Pool, storageDir, publicBaseURL string) *UploadsHandler {
-	return &UploadsHandler{db: db, storageDir: storageDir, publicBaseURL: publicBaseURL}
+func NewUploadsHandler(db *pgxpool.Pool, store storage.Storage) *UploadsHandler {
+	return &UploadsHandler{db: db, store: store}
 }
 
 var allowedImageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true}
@@ -62,16 +60,11 @@ func (h *UploadsHandler) UploadQuestionMedia(c *fiber.Ctx) error {
 	datedDir := time.Now().Format("2006/01")
 	filename := uuid.NewString() + ext
 	relPath := filepath.ToSlash(filepath.Join("questions", datedDir, filename))
-	absPath := filepath.Join(h.storageDir, relPath)
 
-	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر تجهيز مجلد التخزين")
-	}
-	if err := c.SaveFile(file, absPath); err != nil {
+	url, err := h.store.Save(file, relPath)
+	if err != nil {
 		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ الملف")
 	}
-
-	url := strings.TrimSuffix(h.publicBaseURL, "/") + "/" + relPath
 	mediaType := "image"
 
 	var mediaID string
