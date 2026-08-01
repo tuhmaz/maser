@@ -52,6 +52,12 @@ type Config struct {
 	FacebookClientID     string
 	FacebookClientSecret string
 	FacebookRedirectURL  string
+
+	// توليد مسودات أسئلة عبر Together AI — فارغ افتراضيًا (الميزة معطَّلة حتى
+	// يُضبط المفتاح فعليًا، بنفس نمط Google/Facebook أعلاه).
+	TogetherAPIKey        string
+	TogetherDefaultModel  string
+	TogetherAllowedModels []string
 }
 
 // Load يقرأ ملف .env إن وُجد (للتطوير المحلي فقط) ثم يقرأ متغيرات البيئة الفعلية.
@@ -91,6 +97,11 @@ func Load() *Config {
 		FacebookClientID:     getEnv("FACEBOOK_CLIENT_ID", ""),
 		FacebookClientSecret: getEnv("FACEBOOK_CLIENT_SECRET", ""),
 		FacebookRedirectURL:  getEnv("FACEBOOK_REDIRECT_URL", getEnv("API_BASE_URL", "http://localhost:8080")+"/auth/oauth/facebook/callback"),
+
+		TogetherAPIKey:       getEnv("TOGETHER_API_KEY", ""),
+		TogetherDefaultModel: getEnv("TOGETHER_DEFAULT_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+		TogetherAllowedModels: strings.Split(getEnv("TOGETHER_ALLOWED_MODELS",
+			"meta-llama/Llama-3.3-70B-Instruct-Turbo,Qwen/Qwen2.5-72B-Instruct-Turbo,deepseek-ai/DeepSeek-V3"), ","),
 	}
 
 	cfg.validateSecrets()

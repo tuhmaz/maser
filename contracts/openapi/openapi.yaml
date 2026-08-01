@@ -922,6 +922,22 @@ paths:
         "201": { description: "{ id }" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /admin/questions/ai-draft:
+    post:
+      tags: [admin-questions]
+      summary: توليد مسودة سؤال single_choice عبر Together AI (docs/ai-curriculum-roadmap.md — E04)، تمر بنفس تحقق الإنشاء البشري قبل الحفظ كمسودة
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIDraftInput" }
+      responses:
+        "201": { description: "{ id, model }" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "502": { description: رد مزوّد AI غير صالح أو لم يجتز التحقق (ai_invalid_response | ai_invalid_draft) }
+        "503": { description: توليد الأسئلة عبر AI غير مُفعَّل (ai_not_configured — TOGETHER_API_KEY غير مضبوط) }
+
   /admin/questions/{id}:
     get:
       tags: [admin-questions]
@@ -1624,6 +1640,19 @@ components:
         numericAnswer: { type: string }
         tolerance: { type: number, minimum: 0 }
         skillIds: { type: array, items: { type: string, format: uuid } }
+
+    AIDraftInput:
+      type: object
+      required: [gradeId, subjectId, unitId, lessonId, skillIds]
+      properties:
+        gradeId: { type: string, format: uuid }
+        subjectId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+        lessonId: { type: string, format: uuid }
+        skillIds: { type: array, items: { type: string, format: uuid } }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        model: { type: string, description: "اسم نموذج Together AI (اختياري — من قائمة بيضاء، يُستخدم النموذج الافتراضي إن أُغفل)" }
+        topicHint: { type: string, description: توجيه نصي إضافي اختياري لموضوع السؤال }
 
     QuestionSummary:
       type: object

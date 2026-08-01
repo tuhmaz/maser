@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,7 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/alemedu/api/internal/ai"
 	"github.com/alemedu/api/internal/audit"
+	"github.com/alemedu/api/internal/config"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/utils"
 )
@@ -20,11 +24,17 @@ import (
 // قاعدة صارمة: لا يُعدَّل إصدار سؤال ظهر لطالب من قبل — أي تعديل بعد النشر
 // ينشئ إصدارًا جديدًا (question_versions) فتبقى النتائج القديمة قابلة للمراجعة بدقة.
 type AdminQuestionsHandler struct {
-	db *pgxpool.Pool
+	db       *pgxpool.Pool
+	cfg      *config.Config
+	together *ai.TogetherClient // nil إن كان TOGETHER_API_KEY فارغًا — ميزة GenerateAIDraft معطَّلة عندها
 }
 
-func NewAdminQuestionsHandler(db *pgxpool.Pool) *AdminQuestionsHandler {
-	return &AdminQuestionsHandler{db: db}
+func NewAdminQuestionsHandler(db *pgxpool.Pool, cfg *config.Config) *AdminQuestionsHandler {
+	var together *ai.TogetherClient
+	if cfg.TogetherAPIKey != "" {
+		together = ai.NewTogetherClient(cfg.TogetherAPIKey)
+	}
+	return &AdminQuestionsHandler{db: db, cfg: cfg, together: together}
 }
 
 var validQuestionTypes = map[string]bool{
@@ -292,6 +302,19 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 	if msg := h.validateHierarchy(c, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.SkillIDs); msg != "" {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_hierarchy", msg)
 	}
+
+	questionID, err := h.createQuestion(c, req, userID, "question.create", nil)
+	if err != nil {
+		return err
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"id": questionID})
+}
+
+// createQuestion يحفظ سؤالًا جديدًا كمسودة (إصدار أول) — الجزء المشترك بين
+// Create (يبني req من طلب إداري مباشر) وGenerateAIDraft (يبني req من استجابة
+// AI). لا يُستدعى إلا بعد req.validate()/validateHierarchy() في المستدعي —
+// يضمن مرور مسودات AI بنفس قواعد التحقق الصارمة التي يمر بها أي سؤال بشري.
+func (h *AdminQuestionsHandler) createQuestion(c *fiber.Ctx, req saveQuestionRequest, userID, auditAction string, auditExtra map[string]any) (string, error) {
 	if req.Difficulty == "" {
 		req.Difficulty = "medium"
 	}
@@ -301,7 +324,7 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 
 	tx, err := h.db.Begin(c.Context())
 	if err != nil {
-		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء العملية")
+		return "", utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء العملية")
 	}
 	defer tx.Rollback(c.Context())
 
@@ -312,21 +335,26 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 		RETURNING id
 	`, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.Type, req.Difficulty, req.ExpectedTimeSec, userID).Scan(&questionID)
 	if err != nil {
-		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_reference", "تأكد من صحة الصف/المادة/الوحدة/الدرس")
+		return "", utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_reference", "تأكد من صحة الصف/المادة/الوحدة/الدرس")
 	}
 
 	if err := h.writeVersion(c, tx, questionID, 1, req, userID); err != nil {
-		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ محتوى السؤال")
+		return "", utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ محتوى السؤال")
 	}
 	if err := h.linkSkills(c, tx, questionID, req.SkillIDs); err != nil {
-		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_skill", "تعذّر ربط المهارات")
+		return "", utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_skill", "تعذّر ربط المهارات")
 	}
 
 	if err := tx.Commit(c.Context()); err != nil {
-		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ السؤال")
+		return "", utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ السؤال")
 	}
-	audit.Log(c.Context(), h.db, userID, "question.create", "question", questionID, map[string]any{"type": req.Type})
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"id": questionID})
+
+	auditData := map[string]any{"type": req.Type}
+	for k, v := range auditExtra {
+		auditData[k] = v
+	}
+	audit.Log(c.Context(), h.db, userID, auditAction, "question", questionID, auditData)
+	return questionID, nil
 }
 
 // Update يحرر أحدث إصدار في مكانه إن لم يُنشر بعد، أو ينشئ إصدارًا جديدًا
@@ -662,4 +690,163 @@ func (h *AdminQuestionsHandler) Delete(c *fiber.Ctx) error {
 	}
 	audit.Log(c.Context(), h.db, userID, "question.delete", "question", id, nil)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+type aiDraftRequest struct {
+	GradeID    string   `json:"gradeId"`
+	SubjectID  string   `json:"subjectId"`
+	UnitID     string   `json:"unitId"`
+	LessonID   string   `json:"lessonId"`
+	SkillIDs   []string `json:"skillIds"`
+	Difficulty string   `json:"difficulty"`
+	Model      string   `json:"model"`
+	TopicHint  string   `json:"topicHint"`
+}
+
+type aiGeneratedOption struct {
+	Text      string `json:"text"`
+	IsCorrect bool   `json:"isCorrect"`
+}
+
+type aiGeneratedQuestion struct {
+	Body        string              `json:"body"`
+	Explanation string              `json:"explanation"`
+	Options     []aiGeneratedOption `json:"options"`
+}
+
+// GenerateAIDraft يولّد مسودة سؤال single_choice عبر Together AI بناءً على درس
+// ومهارات محددة، ثم يمرّرها لنفس مسار الإنشاء البشري (createQuestion) — فتخضع
+// لنفس التحقق الصارم (validate/validateHierarchy) قبل ظهورها في قائمة المراجعة.
+// docs/ai-curriculum-roadmap.md — E04: مزوّد واحد (Together AI)، نماذج متعددة
+// عبر قائمة بيضاء، معطَّل بالكامل ما لم يُضبط TOGETHER_API_KEY.
+func (h *AdminQuestionsHandler) GenerateAIDraft(c *fiber.Ctx) error {
+	userID, _ := middleware.UserIDFromContext(c)
+
+	var req aiDraftRequest
+	if err := c.BodyParser(&req); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadRequest, "invalid_body", "تعذّرت قراءة الطلب")
+	}
+	if req.GradeID == "" || req.SubjectID == "" || req.UnitID == "" || req.LessonID == "" {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "gradeId/subjectId/unitId/lessonId مطلوبة")
+	}
+	if len(req.SkillIDs) == 0 {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "يجب اختيار مهارة واحدة على الأقل")
+	}
+	if msg := h.validateHierarchy(c, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.SkillIDs); msg != "" {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_hierarchy", msg)
+	}
+	if req.Difficulty == "" {
+		req.Difficulty = "medium"
+	} else if !validDifficulties[req.Difficulty] {
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "validation_error", "الصعوبة يجب أن تكون easy/medium/hard")
+	}
+
+	// فشل مبكر قبل استهلاك أي طلب AI فعلي — يوفّر التكلفة عند خطأ إدخال أو
+	// عدم ضبط المزوّد إطلاقًا على هذا الخادم.
+	if h.together == nil {
+		return utils.ErrorResponse(c, fiber.StatusServiceUnavailable, "ai_not_configured", "توليد الأسئلة عبر AI غير مُفعَّل على هذا الخادم")
+	}
+
+	model := req.Model
+	if model == "" {
+		model = h.cfg.TogetherDefaultModel
+	} else {
+		allowed := false
+		for _, m := range h.cfg.TogetherAllowedModels {
+			if m == model {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "unsupported_model", "النموذج المطلوب غير مسموح به")
+		}
+	}
+
+	lessonName, lessonSummary, err := h.lessonContext(c.Context(), req.LessonID)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "الدرس غير موجود")
+	}
+	skillsContext, err := h.skillsContext(c.Context(), req.SkillIDs)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر جلب المهارات")
+	}
+
+	systemPrompt := `أنت مساعد لإنشاء أسئلة اختيار من متعدد لمنهاج رياضيات الصف السابع في الأردن. ` +
+		`أعد إجابتك بصيغة JSON فقط بالشكل التالي دون أي نص إضافي: ` +
+		`{"body": "نص السؤال", "explanation": "شرح الحل", "options": [{"text": "نص الخيار", "isCorrect": true|false}]}. ` +
+		`يجب أن يحتوي options على 4 خيارات بالضبط، خيار واحد فقط isCorrect=true، ولا تكرار في نصوص الخيارات.`
+
+	userPrompt := fmt.Sprintf("الدرس: %s\nملخص الدرس: %s\nالمهارات المستهدفة: %s\nمستوى الصعوبة: %s",
+		lessonName, lessonSummary, skillsContext, req.Difficulty)
+	if req.TopicHint != "" {
+		userPrompt += "\nتوجيه إضافي: " + req.TopicHint
+	}
+
+	raw, err := h.together.Complete(c.Context(), model, systemPrompt, userPrompt)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadGateway, "ai_request_failed", "تعذّر الاتصال بمزوّد AI")
+	}
+
+	var generated aiGeneratedQuestion
+	if err := json.Unmarshal([]byte(raw), &generated); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadGateway, "ai_invalid_response", "رد مزوّد AI لم يكن بصيغة JSON صالحة")
+	}
+
+	options := make([]questionOptionDTO, len(generated.Options))
+	for i, o := range generated.Options {
+		options[i] = questionOptionDTO{Text: o.Text, Order: i + 1, IsCorrect: o.IsCorrect}
+	}
+
+	draftReq := saveQuestionRequest{
+		GradeID: req.GradeID, SubjectID: req.SubjectID, UnitID: req.UnitID, LessonID: req.LessonID,
+		Type:        "single_choice",
+		Difficulty:  req.Difficulty,
+		Body:        generated.Body,
+		Explanation: generated.Explanation,
+		Options:     options,
+		SkillIDs:    req.SkillIDs,
+	}
+	// نفس التحقق الذي يمر به سؤال بشري — يرفض تلقائيًا أي مسودة AI بلا إجابة
+	// صحيحة واحدة محددة، أو خيارات فارغة/مكررة، إلخ.
+	if msg := draftReq.validate(); msg != "" {
+		return utils.ErrorResponse(c, fiber.StatusBadGateway, "ai_invalid_draft", "مسودة AI لم تجتز التحقق: "+msg)
+	}
+
+	questionID, err := h.createQuestion(c, draftReq, userID, "question.ai_generate", map[string]any{"model": model})
+	if err != nil {
+		return err
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"id": questionID, "model": model})
+}
+
+func (h *AdminQuestionsHandler) lessonContext(ctx context.Context, lessonID string) (name, summary string, err error) {
+	var summaryPtr *string
+	err = h.db.QueryRow(ctx, `SELECT name, summary FROM lessons WHERE id = $1`, lessonID).Scan(&name, &summaryPtr)
+	if summaryPtr != nil {
+		summary = *summaryPtr
+	}
+	return name, summary, err
+}
+
+func (h *AdminQuestionsHandler) skillsContext(ctx context.Context, skillIDs []string) (string, error) {
+	rows, err := h.db.Query(ctx, `SELECT name, description FROM skills WHERE id = ANY($1)`, skillIDs)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var parts []string
+	for rows.Next() {
+		var name string
+		var desc *string
+		if err := rows.Scan(&name, &desc); err != nil {
+			return "", err
+		}
+		if desc != nil && *desc != "" {
+			parts = append(parts, name+" ("+*desc+")")
+		} else {
+			parts = append(parts, name)
+		}
+	}
+	return strings.Join(parts, "، "), rows.Err()
 }

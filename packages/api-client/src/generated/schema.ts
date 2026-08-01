@@ -2403,6 +2403,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/questions/ai-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** توليد مسودة سؤال single_choice عبر Together AI (docs/ai-curriculum-roadmap.md — E04)، تمر بنفس تحقق الإنشاء البشري قبل الحفظ كمسودة */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AIDraftInput"];
+                };
+            };
+            responses: {
+                /** @description { id, model } */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+                /** @description رد مزوّد AI غير صالح أو لم يجتز التحقق (ai_invalid_response | ai_invalid_draft) */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description توليد الأسئلة عبر AI غير مُفعَّل (ai_not_configured — TOGETHER_API_KEY غير مضبوط) */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/questions/{id}": {
         parameters: {
             query?: never;
@@ -3580,6 +3633,23 @@ export interface components {
             numericAnswer?: string;
             tolerance?: number;
             skillIds: string[];
+        };
+        AIDraftInput: {
+            /** Format: uuid */
+            gradeId: string;
+            /** Format: uuid */
+            subjectId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            lessonId: string;
+            skillIds: string[];
+            /** @enum {string} */
+            difficulty?: "easy" | "medium" | "hard";
+            /** @description اسم نموذج Together AI (اختياري — من قائمة بيضاء، يُستخدم النموذج الافتراضي إن أُغفل) */
+            model?: string;
+            /** @description توجيه نصي إضافي اختياري لموضوع السؤال */
+            topicHint?: string;
         };
         QuestionSummary: {
             /** Format: uuid */

@@ -63,7 +63,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 
 	adminCurriculumHandler := handlers.NewAdminCurriculumHandler(db)
 	adminGradesSubjectsHandler := handlers.NewAdminGradesSubjectsHandler(db)
-	adminQuestionsHandler := handlers.NewAdminQuestionsHandler(db)
+	adminQuestionsHandler := handlers.NewAdminQuestionsHandler(db, cfg)
 	adminUsersHandler := handlers.NewAdminUsersHandler(db)
 	adminReportsHandler := handlers.NewAdminReportsHandler(db)
 
@@ -89,6 +89,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	permReportsRead := permChecker.RequirePermission("reports.read")
 	permContentIssuesRead := permChecker.RequirePermission("content_issues.read")
 	permContentIssuesResolve := permChecker.RequirePermission("content_issues.resolve")
+	permAIContentGenerate := permChecker.RequirePermission("ai_content.generate")
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
@@ -214,6 +215,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 
 	admin.Get("/questions", permQuestionsRead, adminQuestionsHandler.List)
 	admin.Post("/questions", permQuestionsEdit, adminQuestionsHandler.Create)
+	admin.Post("/questions/ai-draft", permAIContentGenerate, adminQuestionsHandler.GenerateAIDraft)
 	admin.Get("/questions/:id", permQuestionsRead, adminQuestionsHandler.Get)
 	admin.Put("/questions/:id", permQuestionsEdit, adminQuestionsHandler.Update)
 	admin.Delete("/questions/:id", permQuestionsEdit, adminQuestionsHandler.Delete)
