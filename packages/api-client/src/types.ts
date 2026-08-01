@@ -104,6 +104,7 @@ export interface QuestionSummary {
   usageCount: number;
   errorRate: number | null;
   openReports: number;
+  generatedByAi: boolean;
 }
 
 export interface AdminQuestionOption {
@@ -147,6 +148,22 @@ export interface SaveQuestionInput {
   numericAnswer?: string;
   tolerance?: number;
   skillIds: string[];
+}
+
+export interface AIDraftInput {
+  gradeId: string;
+  subjectId: string;
+  unitId: string;
+  lessonId: string;
+  skillIds: string[];
+  difficulty?: "easy" | "medium" | "hard";
+  model?: string;
+  topicHint?: string;
+}
+
+export interface AIDraftResult {
+  id: string;
+  model: string;
 }
 
 export interface AdminUser {

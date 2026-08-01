@@ -3665,6 +3665,7 @@ export interface components {
             usageCount?: number;
             errorRate?: number | null;
             openReports?: number;
+            generatedByAi?: boolean;
         };
         QuestionDetail: {
             /** Format: uuid */

@@ -1,6 +1,8 @@
 import type {
   Achievement,
   AdminFeatureFlag,
+  AIDraftInput,
+  AIDraftResult,
   AdminGrade,
   AdminLesson,
   AdminQuiz,
@@ -357,6 +359,9 @@ export class ApiClient {
   }
   adminCreateQuestion(input: SaveQuestionInput) {
     return this.request<{ id: string }>("/admin/questions", { method: "POST", body: JSON.stringify(input) });
+  }
+  adminGenerateAIQuestionDraft(input: AIDraftInput) {
+    return this.request<AIDraftResult>("/admin/questions/ai-draft", { method: "POST", body: JSON.stringify(input) });
   }
   adminUpdateQuestion(id: string, input: SaveQuestionInput) {
     return this.request<{ updated: true; newVersionCreated: boolean }>(`/admin/questions/${id}`, {

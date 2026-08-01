@@ -1667,6 +1667,7 @@ components:
         usageCount: { type: integer }
         errorRate: { type: number, nullable: true }
         openReports: { type: integer }
+        generatedByAi: { type: boolean }
 
     QuestionDetail:
       type: object

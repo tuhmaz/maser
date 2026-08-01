@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import type {
@@ -24,8 +25,13 @@ import type {
 } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { QuestionForm } from "@/components/QuestionForm";
+import { AIDraftModal } from "@/components/AIDraftModal";
 import { api } from "@/lib/api";
 import { AdminEmptyState, AdminPageHeader, AdminStatusBadge } from "@/components/AdminPageHeader";
+
+// من يملك صلاحية ai_content.generate فعليًا (migration 0016) — content_reviewer/
+// support يراجعان المحتوى ولا يولّدانه، فلا يُعرض لهما الزر إطلاقًا.
+const AI_GENERATE_ROLES = ["super_admin", "admin", "content_editor"];
 
 const LIFECYCLE: Array<{ key: QuestionStatus; label: string }> = [
   { key: "draft", label: "مسودة" },
@@ -66,6 +72,12 @@ export default function QuestionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [role, setRole] = useState<string | undefined>(undefined);
+  const [showAIModal, setShowAIModal] = useState(false);
+
+  useEffect(() => {
+    api.me().then((u) => setRole(u.role)).catch(() => {});
+  }, []);
 
   function loadList() {
     setLoading(true);
@@ -200,6 +212,9 @@ export default function QuestionsPage() {
         actions={
           <>
             <Button variant="secondary" onClick={loadList} disabled={loading}><RefreshCw size={17} className={loading ? "animate-spin" : ""} /> تحديث</Button>
+            {role && AI_GENERATE_ROLES.includes(role) && (
+              <Button variant="secondary" onClick={() => setShowAIModal(true)}><Sparkles size={17} /> توليد بالذكاء الاصطناعي</Button>
+            )}
             <Button onClick={() => { setEditing(undefined); setView("form"); }}><Plus size={17} /> سؤال جديد</Button>
           </>
         }
@@ -247,7 +262,10 @@ export default function QuestionsPage() {
               {items.map((question) => (
                 <tr key={question.id}>
                   <td className="max-w-80">
-                    <p className="truncate font-black text-[#12213f]" title={question.body}>{question.body}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate font-black text-[#12213f]" title={question.body}>{question.body}</p>
+                      {question.generatedByAi && <AdminStatusBadge label="AI" tone="info" />}
+                    </div>
                     <p className="mt-1 text-[10px] text-[#9aa6b8]">{question.type}</p>
                   </td>
                   <td className="max-w-44 truncate text-[#526078]">{question.lessonName || "غير مرتبط"}</td>
@@ -286,6 +304,16 @@ export default function QuestionsPage() {
         </div>
         {!loading && items.length === 0 && <div className="p-5"><AdminEmptyState title="لا توجد أسئلة مطابقة" description="غيّر الفلاتر أو أنشئ سؤالاً جديداً." icon={<Database size={30} />} /></div>}
       </section>
+
+      {showAIModal && (
+        <AIDraftModal
+          lessons={lessons}
+          skills={skills}
+          hierarchyForLesson={hierarchyForLesson}
+          onGenerated={(id) => { setShowAIModal(false); void openEdit(id); }}
+          onClose={() => setShowAIModal(false)}
+        />
+      )}
     </div>
   );
 }

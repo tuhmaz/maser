@@ -44,16 +44,17 @@ var validQuestionTypes = map[string]bool{
 var validDifficulties = map[string]bool{"easy": true, "medium": true, "hard": true}
 
 type questionSummaryDTO struct {
-	ID          string   `json:"id"`
-	LessonID    string   `json:"lessonId"`
-	LessonName  string   `json:"lessonName"`
-	Type        string   `json:"type"`
-	Difficulty  string   `json:"difficulty"`
-	Status      string   `json:"status"`
-	Body        string   `json:"body"`
-	UsageCount  int      `json:"usageCount"`
-	ErrorRate   *float64 `json:"errorRate"`
-	OpenReports int      `json:"openReports"`
+	ID            string   `json:"id"`
+	LessonID      string   `json:"lessonId"`
+	LessonName    string   `json:"lessonName"`
+	Type          string   `json:"type"`
+	Difficulty    string   `json:"difficulty"`
+	Status        string   `json:"status"`
+	Body          string   `json:"body"`
+	UsageCount    int      `json:"usageCount"`
+	ErrorRate     *float64 `json:"errorRate"`
+	OpenReports   int      `json:"openReports"`
+	GeneratedByAI bool     `json:"generatedByAi"`
 }
 
 // List يدعم التصفية بالحالة والدرس والبحث النصي، مع أداء الاستخدام ونسبة الخطأ
@@ -72,7 +73,8 @@ func (h *AdminQuestionsHandler) List(c *fiber.Ctx) error {
 		       qv.body,
 		       COALESCE(u.usage_count, 0),
 		       CASE WHEN COALESCE(u.usage_count, 0) = 0 THEN NULL ELSE u.wrong_count::float / u.usage_count END,
-		       COALESCE(r.open_reports, 0)
+		       COALESCE(r.open_reports, 0),
+		       q.generated_by_ai
 		FROM questions q
 		JOIN lessons l ON l.id = q.lesson_id
 		JOIN question_versions qv ON qv.question_id = q.id
@@ -101,7 +103,7 @@ func (h *AdminQuestionsHandler) List(c *fiber.Ctx) error {
 	for rows.Next() {
 		var q questionSummaryDTO
 		if err := rows.Scan(&q.ID, &q.LessonID, &q.LessonName, &q.Type, &q.Difficulty, &q.Status,
-			&q.Body, &q.UsageCount, &q.ErrorRate, &q.OpenReports); err != nil {
+			&q.Body, &q.UsageCount, &q.ErrorRate, &q.OpenReports, &q.GeneratedByAI); err != nil {
 			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر قراءة الأسئلة")
 		}
 		items = append(items, q)
@@ -303,7 +305,7 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_hierarchy", msg)
 	}
 
-	questionID, err := h.createQuestion(c, req, userID, "question.create", nil)
+	questionID, err := h.createQuestion(c, req, userID, "question.create", nil, false)
 	if err != nil {
 		return err
 	}
@@ -314,7 +316,7 @@ func (h *AdminQuestionsHandler) Create(c *fiber.Ctx) error {
 // Create (يبني req من طلب إداري مباشر) وGenerateAIDraft (يبني req من استجابة
 // AI). لا يُستدعى إلا بعد req.validate()/validateHierarchy() في المستدعي —
 // يضمن مرور مسودات AI بنفس قواعد التحقق الصارمة التي يمر بها أي سؤال بشري.
-func (h *AdminQuestionsHandler) createQuestion(c *fiber.Ctx, req saveQuestionRequest, userID, auditAction string, auditExtra map[string]any) (string, error) {
+func (h *AdminQuestionsHandler) createQuestion(c *fiber.Ctx, req saveQuestionRequest, userID, auditAction string, auditExtra map[string]any, generatedByAI bool) (string, error) {
 	if req.Difficulty == "" {
 		req.Difficulty = "medium"
 	}
@@ -330,10 +332,10 @@ func (h *AdminQuestionsHandler) createQuestion(c *fiber.Ctx, req saveQuestionReq
 
 	var questionID string
 	err = tx.QueryRow(c.Context(), `
-		INSERT INTO questions (grade_id, subject_id, unit_id, lesson_id, question_type, difficulty, expected_time_sec, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO questions (grade_id, subject_id, unit_id, lesson_id, question_type, difficulty, expected_time_sec, created_by, generated_by_ai)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
-	`, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.Type, req.Difficulty, req.ExpectedTimeSec, userID).Scan(&questionID)
+	`, req.GradeID, req.SubjectID, req.UnitID, req.LessonID, req.Type, req.Difficulty, req.ExpectedTimeSec, userID, generatedByAI).Scan(&questionID)
 	if err != nil {
 		return "", utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "invalid_reference", "تأكد من صحة الصف/المادة/الوحدة/الدرس")
 	}
@@ -813,7 +815,7 @@ func (h *AdminQuestionsHandler) GenerateAIDraft(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusBadGateway, "ai_invalid_draft", "مسودة AI لم تجتز التحقق: "+msg)
 	}
 
-	questionID, err := h.createQuestion(c, draftReq, userID, "question.ai_generate", map[string]any{"model": model})
+	questionID, err := h.createQuestion(c, draftReq, userID, "question.ai_generate", map[string]any{"model": model}, true)
 	if err != nil {
 		return err
 	}
