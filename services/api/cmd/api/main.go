@@ -28,6 +28,11 @@ func main() {
 	app := fiber.New(fiber.Config{
 		AppName:               "Alemedu API",
 		DisableStartupMessage: false,
+		// افتراضي Fiber 4MB يرفض أي طلب أكبر عند بوابة الإطار قبل وصوله لأي
+		// معالج — اكتُشف هذا فعليًا عند اختبار رفع كتاب PDF حقيقي (53MB) عبر
+		// POST /admin/subjects/:id/books (الحد الفعلي للكتب 150MB، راجع
+		// maxBookUploadBytes في admin_subject_books.go).
+		BodyLimit: 160 * 1024 * 1024,
 	})
 
 	app.Use(recover.New())

@@ -21,6 +21,15 @@ type Config struct {
 	// يقرأ ملفات مرفوعة (كتب PDF) مباشرة من هنا، لا عبر storage.Storage
 	// (لا وحدة مشتركة لهذا التجريد بين api وworker — راجع docs/ai-curriculum-roadmap.md، E10).
 	StorageDir string
+
+	// PdftotextPath مسار صريح لثنائي pdftotext (poppler) — اختياري. فارغ
+	// افتراضيًا: يُحاول exec.LookPath("pdftotext") العادي (يعمل بلا ضبط على
+	// Linux مع poppler-utils مثبَّتًا)، وإن فشل يُستخدم مستخرج Go الخالص
+	// كبديل أضعف. اضبطه صراحةً إن كان "pdftotext" على PATH يشير لنسخة أخرى
+	// غير poppler الحقيقية (حدث فعليًا على Windows: Git for Windows يُرفق
+	// نسخة poppler قديمة 4.00 تسبق poppler الحقيقي في PATH وتفشل مع أسماء
+	// ملفات عربية ومحتوى عربي حقيقي).
+	PdftotextPath string
 }
 
 func Load() *Config {
@@ -43,6 +52,7 @@ func Load() *Config {
 		JobInterval:    time.Duration(seconds) * time.Second,
 		TogetherAPIKey: getEnv("TOGETHER_API_KEY", ""),
 		StorageDir:     getEnv("STORAGE_DIR", "./storage"),
+		PdftotextPath:  getEnv("PDFTOTEXT_PATH", ""),
 	}
 }
 

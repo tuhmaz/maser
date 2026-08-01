@@ -35,7 +35,10 @@ func NewAdminSubjectBooksHandler(db *pgxpool.Pool, store storage.Storage, aiJobs
 
 var validBookTypes = map[string]bool{"student": true, "exercises": true, "teacher": true}
 
-const maxBookUploadBytes = 50 * 1024 * 1024 // 50MB — كتب PDF أكبر بكثير من صور الأسئلة (5MB)
+// 150MB — كتب PDF رسمية حقيقية (مثل كتب المركز الوطني لتطوير المناهج الأردني)
+// قد تتجاوز 50MB بسبب صور/رسوم عالية الدقة رغم عدد صفحات معتدل؛ اكتُشف هذا
+// فعليًا عند اختبار الميزة بكتاب حقيقي (53MB لـ115 صفحة).
+const maxBookUploadBytes = 150 * 1024 * 1024
 
 // UploadBook يرفع كتابًا (PDF فقط) لمادة، يستبدل أي كتاب سابق من نفس النوع
 // لنفس المادة، ثم يُشغّل مهمة تحليل AI غير متزامنة عبر ai_jobs (E02).
@@ -58,7 +61,7 @@ func (h *AdminSubjectBooksHandler) UploadBook(c *fiber.Ctx) error {
 		return utils.ErrorResponse(c, fiber.StatusBadRequest, "invalid_body", "يجب إرفاق ملف باسم الحقل file")
 	}
 	if file.Size > maxBookUploadBytes {
-		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "file_too_large", "الحد الأقصى لحجم الكتاب 50 ميغابايت")
+		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "file_too_large", "الحد الأقصى لحجم الكتاب 150 ميغابايت")
 	}
 	if ext := strings.ToLower(filepath.Ext(file.Filename)); ext != ".pdf" {
 		return utils.ErrorResponse(c, fiber.StatusUnprocessableEntity, "unsupported_type", "يُسمح فقط بملفات PDF")
