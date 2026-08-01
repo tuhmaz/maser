@@ -202,6 +202,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	admin.Post("/curricula/subjects", permCurriculumWrite, adminGradesSubjectsHandler.CreateSubject)
 	admin.Post("/subjects/:id/books", permCurriculumWrite, adminSubjectBooksHandler.UploadBook)
 	admin.Get("/subjects/:id/books", permCurriculumRead, adminSubjectBooksHandler.ListBooks)
+	admin.Post("/subjects/:id/books/:bookId/import", permCurriculumWrite, adminSubjectBooksHandler.ImportBookAnalysis)
 
 	admin.Get("/units", permCurriculumRead, adminCurriculumHandler.ListUnits)
 	admin.Post("/units", permCurriculumWrite, adminCurriculumHandler.CreateUnit)

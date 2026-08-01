@@ -17,6 +17,8 @@ import type {
   AttemptView,
   AuditLogEntry,
   BookType,
+  ImportResult,
+  ImportStructureInput,
   AuthResponse,
   ChildProgress,
   ContentIssue,
@@ -469,6 +471,12 @@ export class ApiClient {
     form.append("bookType", bookType);
     form.append("file", file);
     return this.request<{ id: string; url: string }>(`/admin/subjects/${subjectId}/books`, { method: "POST", body: form });
+  }
+  adminImportBookAnalysis(subjectId: string, bookId: string, input: ImportStructureInput) {
+    return this.request<ImportResult>(`/admin/subjects/${subjectId}/books/${bookId}/import`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   }
 
   // --- صور الأسئلة ---

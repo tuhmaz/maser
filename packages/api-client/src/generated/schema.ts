@@ -2051,6 +2051,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/subjects/{id}/books/{bookId}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** استيراد هيكل حرّره الأدمن (بعد مراجعة proposed_structure) إلى units/lessons/skills الحقيقية (docs/ai-curriculum-roadmap.md — E10 المرحلة 2). يعيد استخدام أي صف موجود بنفس الاسم بدل تكراره. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                    bookId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportStructureInput"];
+                };
+            };
+            responses: {
+                /** @description { importedUnits, importedLessons, importedSkills } */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description لا يوجد تحليل مكتمل لهذا الكتاب، أو الكتاب لا ينتمي لهذه المادة */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/units": {
         parameters: {
             query?: never;
@@ -3771,6 +3819,20 @@ export interface components {
             errorMessage?: string;
             /** Format: date-time */
             completedAt?: string;
+            /**
+             * Format: date-time
+             * @description متى استُورِد هذا التحليل فعليًا إلى المنهاج (E10 المرحلة 2) — فارغ إن لم يُستورَد بعد
+             */
+            importedAt?: string;
+        };
+        ImportStructureInput: {
+            units: {
+                name: string;
+                lessons: {
+                    name: string;
+                    skills: string[];
+                }[];
+            }[];
         };
         AdminSubjectBook: {
             /** Format: uuid */

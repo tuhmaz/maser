@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/alemedu/api/internal/audit"
@@ -93,6 +96,7 @@ type bookAnalysisDTO struct {
 	ProposedStructure *string `json:"proposedStructure,omitempty"` // JSON خام يُعرض كما هو للمراجعة (لا فك تسلسل هنا)
 	ErrorMessage      *string `json:"errorMessage,omitempty"`
 	CompletedAt       *string `json:"completedAt,omitempty"`
+	ImportedAt        *string `json:"importedAt,omitempty"`
 }
 
 type subjectBookDTO struct {
@@ -110,10 +114,10 @@ func (h *AdminSubjectBooksHandler) ListBooks(c *fiber.Ctx) error {
 
 	rows, err := h.db.Query(c.Context(), `
 		SELECT sb.id, sb.book_type, sb.url, sb.created_at::text,
-		       ba.status, ba.proposed_structure::text, ba.error_message, ba.completed_at::text
+		       ba.status, ba.proposed_structure::text, ba.error_message, ba.completed_at::text, ba.imported_at::text
 		FROM subject_books sb
 		LEFT JOIN LATERAL (
-			SELECT status, proposed_structure, error_message, completed_at
+			SELECT status, proposed_structure, error_message, completed_at, imported_at
 			FROM book_analyses WHERE subject_book_id = sb.id
 			ORDER BY created_at DESC LIMIT 1
 		) ba ON true
@@ -128,18 +132,187 @@ func (h *AdminSubjectBooksHandler) ListBooks(c *fiber.Ctx) error {
 	items := []subjectBookDTO{}
 	for rows.Next() {
 		var b subjectBookDTO
-		var status, proposedStructure, errorMessage, completedAt *string
+		var status, proposedStructure, errorMessage, completedAt, importedAt *string
 		if err := rows.Scan(&b.ID, &b.BookType, &b.URL, &b.CreatedAt,
-			&status, &proposedStructure, &errorMessage, &completedAt); err != nil {
+			&status, &proposedStructure, &errorMessage, &completedAt, &importedAt); err != nil {
 			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر قراءة كتب المادة")
 		}
 		if status != nil {
 			b.Analysis = &bookAnalysisDTO{
 				Status: *status, ProposedStructure: proposedStructure,
-				ErrorMessage: errorMessage, CompletedAt: completedAt,
+				ErrorMessage: errorMessage, CompletedAt: completedAt, ImportedAt: importedAt,
 			}
 		}
 		items = append(items, b)
 	}
 	return c.JSON(items)
+}
+
+type importLessonInput struct {
+	Name   string   `json:"name"`
+	Skills []string `json:"skills"`
+}
+
+type importUnitInput struct {
+	Name    string              `json:"name"`
+	Lessons []importLessonInput `json:"lessons"`
+}
+
+type importStructureInput struct {
+	Units []importUnitInput `json:"units"`
+}
+
+// ImportBookAnalysis يستورد هيكلًا حرّره الأدمن (بعد مراجعة proposed_structure)
+// إلى units/lessons/skills الحقيقية — docs/ai-curriculum-roadmap.md، E10
+// المرحلة 2. يعيد استخدام أي صف موجود بنفس الاسم بدل تكراره، فإعادة استيراد
+// نفس الكتاب لا تُنتج نسخًا مكررة.
+func (h *AdminSubjectBooksHandler) ImportBookAnalysis(c *fiber.Ctx) error {
+	userID, _ := middleware.UserIDFromContext(c)
+	subjectID := c.Params("id")
+	bookID := c.Params("bookId")
+
+	var req importStructureInput
+	if err := c.BodyParser(&req); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusBadRequest, "invalid_body", "تعذّرت قراءة الطلب")
+	}
+
+	var analysisID, ownerSubjectID string
+	err := h.db.QueryRow(c.Context(), `
+		SELECT ba.id, sb.subject_id
+		FROM book_analyses ba
+		JOIN subject_books sb ON sb.id = ba.subject_book_id
+		WHERE ba.subject_book_id = $1 AND ba.status = 'completed'
+		ORDER BY ba.created_at DESC LIMIT 1
+	`, bookID).Scan(&analysisID, &ownerSubjectID)
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "لا يوجد تحليل مكتمل لهذا الكتاب")
+	}
+	if ownerSubjectID != subjectID {
+		return utils.ErrorResponse(c, fiber.StatusNotFound, "not_found", "الكتاب لا ينتمي لهذه المادة")
+	}
+
+	tx, err := h.db.Begin(c.Context())
+	if err != nil {
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر بدء العملية")
+	}
+	defer tx.Rollback(c.Context())
+
+	var importedUnits, importedLessons, importedSkills int
+	for _, unit := range req.Units {
+		unitName := strings.TrimSpace(unit.Name)
+		if unitName == "" {
+			continue
+		}
+		unitID, created, err := findOrCreateUnit(c.Context(), tx, subjectID, unitName)
+		if err != nil {
+			return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر إنشاء الوحدة: "+unitName)
+		}
+		if created {
+			importedUnits++
+		}
+
+		for _, lesson := range unit.Lessons {
+			lessonName := strings.TrimSpace(lesson.Name)
+			if lessonName == "" {
+				continue
+			}
+			lessonID, created, err := findOrCreateLesson(c.Context(), tx, unitID, lessonName)
+			if err != nil {
+				return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر إنشاء الدرس: "+lessonName)
+			}
+			if created {
+				importedLessons++
+			}
+
+			for _, skillName := range lesson.Skills {
+				name := strings.TrimSpace(skillName)
+				if name == "" {
+					continue
+				}
+				skillID, created, err := findOrCreateSkill(c.Context(), tx, name)
+				if err != nil {
+					return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر إنشاء المهارة: "+name)
+				}
+				if created {
+					importedSkills++
+				}
+				if _, err := tx.Exec(c.Context(), `
+					INSERT INTO lesson_skills (lesson_id, skill_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
+				`, lessonID, skillID); err != nil {
+					return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر ربط المهارة بالدرس")
+				}
+			}
+		}
+	}
+
+	if _, err := tx.Exec(c.Context(), `UPDATE book_analyses SET imported_at = now() WHERE id = $1`, analysisID); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر تحديث حالة الاستيراد")
+	}
+
+	if err := tx.Commit(c.Context()); err != nil {
+		return utils.ErrorResponse(c, fiber.StatusInternalServerError, "internal_error", "تعذّر حفظ الاستيراد")
+	}
+
+	audit.Log(c.Context(), h.db, userID, "book_analysis.import", "subject_book", bookID, map[string]any{
+		"importedUnits": importedUnits, "importedLessons": importedLessons, "importedSkills": importedSkills,
+	})
+	return c.JSON(fiber.Map{
+		"importedUnits": importedUnits, "importedLessons": importedLessons, "importedSkills": importedSkills,
+	})
+}
+
+func findOrCreateUnit(ctx context.Context, tx pgx.Tx, subjectID, name string) (id string, created bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT id FROM units WHERE subject_id = $1 AND name ILIKE $2 LIMIT 1`, subjectID, name).Scan(&id)
+	if err == nil {
+		return id, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, err
+	}
+	var nextOrder int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX("order"), 0) + 1 FROM units WHERE subject_id = $1`, subjectID).Scan(&nextOrder); err != nil {
+		return "", false, err
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO units (subject_id, name, "order") VALUES ($1, $2, $3) RETURNING id
+	`, subjectID, name, nextOrder).Scan(&id); err != nil {
+		return "", false, err
+	}
+	return id, true, nil
+}
+
+func findOrCreateLesson(ctx context.Context, tx pgx.Tx, unitID, name string) (id string, created bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT id FROM lessons WHERE unit_id = $1 AND name ILIKE $2 LIMIT 1`, unitID, name).Scan(&id)
+	if err == nil {
+		return id, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, err
+	}
+	var nextOrder int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX("order"), 0) + 1 FROM lessons WHERE unit_id = $1`, unitID).Scan(&nextOrder); err != nil {
+		return "", false, err
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO lessons (unit_id, name, "order") VALUES ($1, $2, $3) RETURNING id
+	`, unitID, name, nextOrder).Scan(&id); err != nil {
+		return "", false, err
+	}
+	return id, true, nil
+}
+
+func findOrCreateSkill(ctx context.Context, tx pgx.Tx, name string) (id string, created bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT id FROM skills WHERE name ILIKE $1 LIMIT 1`, name).Scan(&id)
+	if err == nil {
+		return id, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", false, err
+	}
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO skills (name, difficulty) VALUES ($1, 'medium') RETURNING id
+	`, name).Scan(&id); err != nil {
+		return "", false, err
+	}
+	return id, true, nil
 }

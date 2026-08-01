@@ -778,6 +778,26 @@ paths:
         "201": { description: "{ id, url }" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /admin/subjects/{id}/books/{bookId}/import:
+    post:
+      tags: [admin-curriculum]
+      summary: استيراد هيكل حرّره الأدمن (بعد مراجعة proposed_structure) إلى units/lessons/skills الحقيقية (docs/ai-curriculum-roadmap.md — E10 المرحلة 2). يعيد استخدام أي صف موجود بنفس الاسم بدل تكراره.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - name: bookId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportStructureInput" }
+      responses:
+        "200": { description: "{ importedUnits, importedLessons, importedSkills }" }
+        "404": { description: لا يوجد تحليل مكتمل لهذا الكتاب، أو الكتاب لا ينتمي لهذه المادة }
+
   /admin/units:
     get:
       tags: [admin-curriculum]
@@ -1729,6 +1749,27 @@ components:
         proposedStructure: { type: string, description: "JSON خام (نص) لمسودة هيكل وحدات/دروس/مهارات مقترَحة — للعرض فقط" }
         errorMessage: { type: string }
         completedAt: { type: string, format: date-time }
+        importedAt: { type: string, format: date-time, description: "متى استُورِد هذا التحليل فعليًا إلى المنهاج (E10 المرحلة 2) — فارغ إن لم يُستورَد بعد" }
+
+    ImportStructureInput:
+      type: object
+      required: [units]
+      properties:
+        units:
+          type: array
+          items:
+            type: object
+            required: [name, lessons]
+            properties:
+              name: { type: string }
+              lessons:
+                type: array
+                items:
+                  type: object
+                  required: [name, skills]
+                  properties:
+                    name: { type: string }
+                    skills: { type: array, items: { type: string } }
 
     AdminSubjectBook:
       type: object

@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Loader2, Upload, X } from "lucide-react";
+import { BookOpen, Loader2, Upload } from "lucide-react";
 import type { AdminSubjectBook, BookType } from "@alemedu/api-client";
 import { api } from "@/lib/api";
 import { AdminStatusBadge } from "@/components/AdminPageHeader";
+import { BookAnalysisReviewModal } from "@/components/BookAnalysisReviewModal";
 
-// لوحة كتب المادة (docs/ai-curriculum-roadmap.md — E10، المرحلة 1): رفع كتاب
-// الطالب/التمارين/المعلم (PDF)، ومتابعة تحليل AI غير المتزامن (ai_jobs) حتى
-// اكتماله. proposedStructure مسودة للعرض فقط — لا استيراد للمنهاج الفعلي هنا
-// (حزمة تالية منفصلة، بنفس منطق تقسيم E04→E05).
+// لوحة كتب المادة (docs/ai-curriculum-roadmap.md — E10): رفع كتاب الطالب/
+// التمارين/المعلم (PDF)، متابعة تحليل AI غير المتزامن (ai_jobs) حتى اكتماله،
+// ثم مراجعة/تعديل/استيراد المقترَح فعليًا إلى المنهاج عبر BookAnalysisReviewModal
+// (المرحلة 2) — لا كتابة تلقائية، اعتماد إداري صريح فقط.
 
 const BOOK_TYPE_LABELS: Record<BookType, string> = {
   student: "كتاب الطالب",
@@ -73,7 +74,7 @@ export function SubjectBooksPanel({ subjectId }: { subjectId: string }) {
                   <AdminStatusBadge label="قيد التحليل" tone="warning" />
                 ) : status === "completed" ? (
                   <button type="button" className="text-xs font-bold text-[#1565d8] hover:underline" onClick={() => setViewingAnalysis(book!)}>
-                    عرض التحليل المقترح
+                    {book!.analysis?.importedAt ? "مراجعة/استيراد مجددًا" : "مراجعة واستيراد"}
                   </button>
                 ) : status === "failed" ? (
                   <AdminStatusBadge label="فشل التحليل" tone="danger" />
@@ -111,24 +112,13 @@ export function SubjectBooksPanel({ subjectId }: { subjectId: string }) {
       </div>
 
       {viewingAnalysis && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="admin-surface w-full max-w-lg overflow-hidden">
-            <div className="flex items-center justify-between border-b border-[#e7ecf3] p-4">
-              <h3 className="font-black text-[#12213f]">التحليل المقترح — {BOOK_TYPE_LABELS[viewingAnalysis.bookType]}</h3>
-              <button type="button" onClick={() => setViewingAnalysis(null)} className="text-[#9aa6b8] hover:text-[#12213f]" aria-label="إغلاق"><X size={18} /></button>
-            </div>
-            <div className="max-h-[60vh] overflow-auto p-4">
-              <p className="mb-3 text-xs text-[#64718a]">
-                مسودة اقترحها AI من محتوى الكتاب (وحدات/دروس/مهارات) — للمراجعة فقط، لم تُستورَد إلى المنهاج الفعلي بعد.
-              </p>
-              <pre className="whitespace-pre-wrap break-words rounded-lg bg-[#f7f9fc] p-3 text-[11px] text-[#33415c]" dir="ltr">
-                {viewingAnalysis.analysis?.proposedStructure
-                  ? JSON.stringify(JSON.parse(viewingAnalysis.analysis.proposedStructure), null, 2)
-                  : "لا يوجد"}
-              </pre>
-            </div>
-          </div>
-        </div>
+        <BookAnalysisReviewModal
+          subjectId={subjectId}
+          book={viewingAnalysis}
+          bookTypeLabel={BOOK_TYPE_LABELS[viewingAnalysis.bookType]}
+          onClose={() => setViewingAnalysis(null)}
+          onImported={load}
+        />
       )}
     </div>
   );

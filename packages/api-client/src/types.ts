@@ -46,6 +46,27 @@ export interface BookAnalysis {
   proposedStructure?: string; // JSON خام (نص) — مسودة هيكل وحدات/دروس/مهارات مقترَحة، للعرض فقط
   errorMessage?: string;
   completedAt?: string;
+  importedAt?: string;
+}
+
+export interface ImportLessonInput {
+  name: string;
+  skills: string[];
+}
+
+export interface ImportUnitInput {
+  name: string;
+  lessons: ImportLessonInput[];
+}
+
+export interface ImportStructureInput {
+  units: ImportUnitInput[];
+}
+
+export interface ImportResult {
+  importedUnits: number;
+  importedLessons: number;
+  importedSkills: number;
 }
 
 export interface AdminSubjectBook {
