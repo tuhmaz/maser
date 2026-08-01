@@ -236,7 +236,7 @@ jobs:
 
       - name: إنشاء حساب أدمن للاختبار (نفس بيانات e2e/tests/support/admin.ts)
         run: |
-          PSQL_CMD="psql $DATABASE_URL" scripts/create-admin.sh admin@alemedu.com 'Admin@12345'
+          PSQL_CMD="psql $DATABASE_URL" bash scripts/create-admin.sh admin@alemedu.com 'Admin@12345'
 
       - run: npm ci
 
