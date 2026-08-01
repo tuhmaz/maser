@@ -1,6 +1,7 @@
 go 1.25.4
 
 use (
+	./libs/togetherai
 	./services/api
 	./services/worker
 )

@@ -751,6 +751,33 @@ paths:
         "201": { description: "{ id }" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /admin/subjects/{id}/books:
+    get:
+      tags: [admin-curriculum]
+      summary: كتب المادة (طالب/تمارين/معلم) مع آخر نتيجة تحليل AI لكل كتاب (docs/ai-curriculum-roadmap.md — E10)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: قائمة كتب المادة, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AdminSubjectBook" } } } } }
+    post:
+      tags: [admin-curriculum]
+      summary: رفع كتاب PDF لمادة (يستبدل كتابًا سابقًا من نفس النوع)، ويُشغّل تحليل AI غير متزامن عبر ai_jobs
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, bookType]
+              properties:
+                file: { type: string, format: binary }
+                bookType: { type: string, enum: [student, exercises, teacher] }
+      responses:
+        "201": { description: "{ id, url }" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
   /admin/units:
     get:
       tags: [admin-curriculum]
@@ -1694,6 +1721,23 @@ components:
       properties:
         id: { type: string, format: uuid }
         url: { type: string }
+
+    BookAnalysis:
+      type: object
+      properties:
+        status: { type: string, enum: [pending, processing, completed, failed] }
+        proposedStructure: { type: string, description: "JSON خام (نص) لمسودة هيكل وحدات/دروس/مهارات مقترَحة — للعرض فقط" }
+        errorMessage: { type: string }
+        completedAt: { type: string, format: date-time }
+
+    AdminSubjectBook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        bookType: { type: string, enum: [student, exercises, teacher] }
+        url: { type: string }
+        createdAt: { type: string, format: date-time }
+        analysis: { $ref: "#/components/schemas/BookAnalysis" }
 
     AdminUser:
       type: object

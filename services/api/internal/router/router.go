@@ -30,6 +30,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	attemptRepo := repository.NewAttemptRepository(db)
 	learningRepo := repository.NewLearningRepository(db)
 	permissionRepo := repository.NewPermissionRepository(db)
+	aiJobRepo := repository.NewAIJobRepository(db)
 
 	mailerFallback := email.Config{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUser, Password: cfg.SMTPPass,
@@ -63,6 +64,7 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 
 	adminCurriculumHandler := handlers.NewAdminCurriculumHandler(db)
 	adminGradesSubjectsHandler := handlers.NewAdminGradesSubjectsHandler(db)
+	adminSubjectBooksHandler := handlers.NewAdminSubjectBooksHandler(db, localStorage, aiJobRepo)
 	adminQuestionsHandler := handlers.NewAdminQuestionsHandler(db, cfg)
 	adminUsersHandler := handlers.NewAdminUsersHandler(db)
 	adminReportsHandler := handlers.NewAdminReportsHandler(db)
@@ -198,6 +200,8 @@ func Setup(app *fiber.App, cfg *config.Config, db *pgxpool.Pool, redisStorage fi
 	admin.Get("/curricula/grades", permCurriculumRead, adminGradesSubjectsHandler.ListGrades)
 	admin.Post("/curricula/grades", permCurriculumWrite, adminGradesSubjectsHandler.CreateGrade)
 	admin.Post("/curricula/subjects", permCurriculumWrite, adminGradesSubjectsHandler.CreateSubject)
+	admin.Post("/subjects/:id/books", permCurriculumWrite, adminSubjectBooksHandler.UploadBook)
+	admin.Get("/subjects/:id/books", permCurriculumRead, adminSubjectBooksHandler.ListBooks)
 
 	admin.Get("/units", permCurriculumRead, adminCurriculumHandler.ListUnits)
 	admin.Post("/units", permCurriculumWrite, adminCurriculumHandler.CreateUnit)

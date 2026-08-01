@@ -12,11 +12,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/alemedu/api/internal/ai"
 	"github.com/alemedu/api/internal/audit"
 	"github.com/alemedu/api/internal/config"
 	"github.com/alemedu/api/internal/middleware"
 	"github.com/alemedu/api/internal/utils"
+	"github.com/alemedu/togetherai"
 )
 
 // AdminQuestionsHandler ينفّذ دورة حياة السؤال كاملة (docs/question-model.md):
@@ -26,13 +26,13 @@ import (
 type AdminQuestionsHandler struct {
 	db       *pgxpool.Pool
 	cfg      *config.Config
-	together *ai.TogetherClient // nil إن كان TOGETHER_API_KEY فارغًا — ميزة GenerateAIDraft معطَّلة عندها
+	together *togetherai.TogetherClient // nil إن كان TOGETHER_API_KEY فارغًا — ميزة GenerateAIDraft معطَّلة عندها
 }
 
 func NewAdminQuestionsHandler(db *pgxpool.Pool, cfg *config.Config) *AdminQuestionsHandler {
-	var together *ai.TogetherClient
+	var together *togetherai.TogetherClient
 	if cfg.TogetherAPIKey != "" {
-		together = ai.NewTogetherClient(cfg.TogetherAPIKey)
+		together = togetherai.NewTogetherClient(cfg.TogetherAPIKey)
 	}
 	return &AdminQuestionsHandler{db: db, cfg: cfg, together: together}
 }

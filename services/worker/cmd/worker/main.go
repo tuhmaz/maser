@@ -29,7 +29,7 @@ func main() {
 	registeredJobs := []jobs.Job{
 		jobs.ExpireAbandonedAttempts{},
 		jobs.GenerateDailyPlans{},
-		jobs.ProcessAIJobs{},
+		jobs.ProcessAIJobs{Cfg: cfg},
 	}
 
 	log.Printf("Alemedu Worker يعمل (كل %s) في بيئة %s", cfg.JobInterval, cfg.AppEnv)

@@ -8,6 +8,7 @@ import type {
   AdminQuiz,
   AdminSiteSettings,
   AdminSkill,
+  AdminSubjectBook,
   AdminUnit,
   AdminUser,
   AnswerPayload,
@@ -15,6 +16,7 @@ import type {
   AttemptResult,
   AttemptView,
   AuditLogEntry,
+  BookType,
   AuthResponse,
   ChildProgress,
   ContentIssue,
@@ -455,6 +457,18 @@ export class ApiClient {
   }
   adminCreateSubject(input: { gradeId: string; name: string; slug: string }) {
     return this.request<{ id: string }>("/admin/curricula/subjects", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  // --- كتب المادة وتحليل AI (docs/ai-curriculum-roadmap.md — E10) ---
+
+  adminListSubjectBooks(subjectId: string) {
+    return this.request<AdminSubjectBook[]>(`/admin/subjects/${subjectId}/books`);
+  }
+  adminUploadSubjectBook(subjectId: string, bookType: BookType, file: File) {
+    const form = new FormData();
+    form.append("bookType", bookType);
+    form.append("file", file);
+    return this.request<{ id: string; url: string }>(`/admin/subjects/${subjectId}/books`, { method: "POST", body: form });
   }
 
   // --- صور الأسئلة ---

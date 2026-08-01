@@ -1,8 +1,13 @@
-// Package ai يوفر عميلًا لمزوّد AI واحد (Together AI) — قرار الخارطة
+// Package togetherai يوفر عميلًا لمزوّد AI واحد (Together AI) — قرار الخارطة
 // docs/ai-curriculum-roadmap.md: "لا تعدد مزوّدين من اليوم الأول". Together
 // يوفر واجهة متوافقة مع OpenAI تقبل أسماء نماذج متعددة لنفس الحساب، فيلبي هذا
 // عمليًا رغبة تعدد النماذج دون تعقيد تكامل مزوّدين مختلفين.
-package ai
+//
+// حزمة مشتركة (وحدة Go مستقلة، لا internal) بين services/api وservices/worker
+// — كلاهما يحتاج استدعاء AI فعليًا (api لتوليد سؤال واحد متزامنًا E04،
+// worker لتحليل كتاب دُفعيًا E10)، ولا يمكن لـworker استيراد internal/
+// الخاصة بـapi (قيد Go)، فكان لا بد من وحدة ثالثة مشتركة.
+package togetherai
 
 import (
 	"bytes"

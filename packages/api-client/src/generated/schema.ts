@@ -1983,6 +1983,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/subjects/{id}/books": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** كتب المادة (طالب/تمارين/معلم) مع آخر نتيجة تحليل AI لكل كتاب (docs/ai-curriculum-roadmap.md — E10) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description قائمة كتب المادة */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminSubjectBook"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** رفع كتاب PDF لمادة (يستبدل كتابًا سابقًا من نفس النوع)، ويُشغّل تحليل AI غير متزامن عبر ai_jobs */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["Id"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                        /** @enum {string} */
+                        bookType: "student" | "exercises" | "teacher";
+                    };
+                };
+            };
+            responses: {
+                /** @description { id, url } */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/units": {
         parameters: {
             query?: never;
@@ -3694,6 +3762,25 @@ export interface components {
             /** Format: uuid */
             id?: string;
             url?: string;
+        };
+        BookAnalysis: {
+            /** @enum {string} */
+            status?: "pending" | "processing" | "completed" | "failed";
+            /** @description JSON خام (نص) لمسودة هيكل وحدات/دروس/مهارات مقترَحة — للعرض فقط */
+            proposedStructure?: string;
+            errorMessage?: string;
+            /** Format: date-time */
+            completedAt?: string;
+        };
+        AdminSubjectBook: {
+            /** Format: uuid */
+            id?: string;
+            /** @enum {string} */
+            bookType?: "student" | "exercises" | "teacher";
+            url?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            analysis?: components["schemas"]["BookAnalysis"];
         };
         AdminUser: {
             /** Format: uuid */

@@ -39,6 +39,23 @@ export interface Subject {
   slug: string;
 }
 
+export type BookType = "student" | "exercises" | "teacher";
+
+export interface BookAnalysis {
+  status: "pending" | "processing" | "completed" | "failed";
+  proposedStructure?: string; // JSON خام (نص) — مسودة هيكل وحدات/دروس/مهارات مقترَحة، للعرض فقط
+  errorMessage?: string;
+  completedAt?: string;
+}
+
+export interface AdminSubjectBook {
+  id: string;
+  bookType: BookType;
+  url: string;
+  createdAt: string;
+  analysis?: BookAnalysis;
+}
+
 export interface Unit {
   id: string;
   name: string;

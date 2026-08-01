@@ -10,17 +10,20 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/alemedu/worker/internal/config"
 )
 
-// aiJobHandler ينفّذ منطق مهمة AI واحدة. لا معالجات حقيقية بعد (تصل مع Epic
-// E04 — اختيار مزوّد AI)؛ noop فقط لإثبات آلية السحب/الإكمال/إعادة المحاولة
-// (Epic E02، docs/ai-curriculum-roadmap.md).
-type aiJobHandler func(ctx context.Context, db *pgxpool.Pool, payload json.RawMessage) error
+// aiJobHandler ينفّذ منطق مهمة AI واحدة. cfg يوفّر ما يحتاجه المعالج من إعداد
+// (مفتاح Together، مجلد التخزين) دون الاعتماد على متغيرات بيئة عامة داخل كل
+// معالج على حدة.
+type aiJobHandler func(ctx context.Context, db *pgxpool.Pool, cfg *config.Config, payload json.RawMessage) error
 
 var aiJobHandlers = map[string]aiJobHandler{
-	"noop": func(ctx context.Context, db *pgxpool.Pool, payload json.RawMessage) error {
+	"noop": func(ctx context.Context, db *pgxpool.Pool, cfg *config.Config, payload json.RawMessage) error {
 		return nil
 	},
+	"analyze_book": runAnalyzeBook,
 }
 
 // أقصى عدد مهام تُسحَب في دورة واحدة، كي لا يحتكر طابور AI الدورة كلها على حساب بقية المهام الدورية.
@@ -29,11 +32,13 @@ const aiJobBatchCap = 20
 // ProcessAIJobs يسحب مهام AI المعلَّقة من ai_jobs ويعالجها. السحب عبر
 // FOR UPDATE SKIP LOCKED داخل معاملة قصيرة — يمنع تعارض عدة نسخ من الـworker
 // على نفس الصف دون قفل الجدول كله (يدعم لاحقًا تشغيل أكثر من نسخة worker).
-type ProcessAIJobs struct{}
+type ProcessAIJobs struct {
+	Cfg *config.Config
+}
 
 func (ProcessAIJobs) Name() string { return "process_ai_jobs" }
 
-func (ProcessAIJobs) Run(ctx context.Context, db *pgxpool.Pool) error {
+func (p ProcessAIJobs) Run(ctx context.Context, db *pgxpool.Pool) error {
 	for i := 0; i < aiJobBatchCap; i++ {
 		job, err := claimNextAIJob(ctx, db)
 		if err != nil {
@@ -42,7 +47,7 @@ func (ProcessAIJobs) Run(ctx context.Context, db *pgxpool.Pool) error {
 		if job == nil {
 			return nil // لا مهام معلَّقة جاهزة للسحب
 		}
-		finishAIJob(ctx, db, job)
+		finishAIJob(ctx, db, p.Cfg, job)
 	}
 	return nil
 }
@@ -97,13 +102,13 @@ func claimNextAIJob(ctx context.Context, db *pgxpool.Pool) (*aiJob, error) {
 // finishAIJob ينفّذ المعالج المسجَّل لنوع المهمة، ثم يُكمل المهمة أو يعيدها
 // لطابور الانتظار بتأخير تصاعدي (backoff خطي: 30 ثانية × رقم المحاولة) حتى
 // max_attempts، وبعدها تُوسَم "failed" نهائيًا دون إعادة محاولة تلقائية أخرى.
-func finishAIJob(ctx context.Context, db *pgxpool.Pool, job *aiJob) {
+func finishAIJob(ctx context.Context, db *pgxpool.Pool, cfg *config.Config, job *aiJob) {
 	handler, ok := aiJobHandlers[job.jobType]
 	var runErr error
 	if !ok {
 		runErr = fmt.Errorf("لا معالج مسجَّل لنوع المهمة %q", job.jobType)
 	} else {
-		runErr = handler(ctx, db, job.payload)
+		runErr = handler(ctx, db, cfg, job.payload)
 	}
 
 	if runErr == nil {

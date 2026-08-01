@@ -66,6 +66,19 @@ jobs:
           out="$(gofmt -l ./services/worker)"
           if [ -n "$out" ]; then echo "$out"; exit 1; fi
 
+      - name: gofmt (togetherai)
+        run: |
+          out="$(gofmt -l ./libs/togetherai)"
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi
+
+      - name: go vet (togetherai)
+        working-directory: libs/togetherai
+        run: go vet ./...
+
+      - name: go build (togetherai)
+        working-directory: libs/togetherai
+        run: go build ./...
+
       - name: go vet (api)
         working-directory: services/api
         run: go vet ./...

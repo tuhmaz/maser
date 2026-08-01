@@ -62,7 +62,12 @@ type Config struct {
 
 // Load يقرأ ملف .env إن وُجد (للتطوير المحلي فقط) ثم يقرأ متغيرات البيئة الفعلية.
 func Load() *Config {
-	_ = godotenv.Load() // تجاهل الخطأ: في staging/production تُمرَّر القيم عبر systemd/environment مباشرة
+	// Overload لا Load: يجب أن تفوز قيم .env المحلي دائمًا على أي متغير بيئة
+	// عام ملوَّث في جهاز المطوّر (مثال حي: TOGETHER_API_KEY كان مضبوطًا على
+	// مستوى Windows User من أداة أخرى، فكانت Load تتجاهل قيمة .env الصحيحة
+	// بصمت). في staging/production لا وجود لملف .env أصلًا فتُمرَّر القيم عبر
+	// systemd/environment مباشرة — Overload لا تُغيّر شيئًا حينها (لا ملف لتحميله).
+	_ = godotenv.Overload()
 
 	cfg := &Config{
 		AppEnv:  getEnv("APP_ENV", "development"),

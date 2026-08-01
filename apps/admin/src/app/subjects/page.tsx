@@ -6,6 +6,7 @@ import type { AdminGrade, Subject } from "@alemedu/api-client";
 import { Button } from "@alemedu/ui";
 import { api } from "@/lib/api";
 import { AdminEmptyState, AdminPageHeader } from "@/components/AdminPageHeader";
+import { SubjectBooksPanel } from "@/components/SubjectBooksPanel";
 
 export default function AdminSubjectsPage() {
   const [grades, setGrades] = useState<AdminGrade[]>([]);
@@ -105,12 +106,15 @@ export default function AdminSubjectsPage() {
       ) : (
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {subjects.map((subject) => (
-            <article key={subject.id} className="admin-surface flex items-center gap-4 p-5">
-              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#eaf2ff] text-[#1565d8]"><BookCopy size={21} /></span>
-              <div className="min-w-0">
-                <h2 className="font-black text-[#12213f]">{subject.name}</h2>
-                <p dir="ltr" className="mt-1 truncate text-left font-mono text-xs text-[#7b879c]">{subject.slug}</p>
+            <article key={subject.id} className="admin-surface p-5">
+              <div className="flex items-center gap-4">
+                <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#eaf2ff] text-[#1565d8]"><BookCopy size={21} /></span>
+                <div className="min-w-0">
+                  <h2 className="font-black text-[#12213f]">{subject.name}</h2>
+                  <p dir="ltr" className="mt-1 truncate text-left font-mono text-xs text-[#7b879c]">{subject.slug}</p>
+                </div>
               </div>
+              <SubjectBooksPanel subjectId={subject.id} />
             </article>
           ))}
         </section>
