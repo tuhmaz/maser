@@ -234,6 +234,15 @@ jobs:
           psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS citext;"
           bash scripts/migrate.sh up
 
+      # قاعدة CI مُهاجَرة فقط (بلا محتوى) — اختبارات تعتمد على منهاج فعلي
+      # (اختبار تشخيصي، مراجعة أخطاء) تحتاج وحدة/درس/مهارات/أسئلة منشورة
+      # فعليًا، وإلا فشلت بلا علاقة بالكود نفسه. ترتيب الملفين إلزامي:
+      # seed-more-content.sql يشير لصفوف ينشئها seed-demo-content.sql.
+      - name: بذر محتوى تجريبي (وحدات/دروس/مهارات/أسئلة منشورة) للاختبارات
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/seed-demo-content.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/seed-more-content.sql
+
       - name: إنشاء حساب أدمن للاختبار (نفس بيانات e2e/tests/support/admin.ts)
         run: |
           PSQL_CMD="psql $DATABASE_URL" bash scripts/create-admin.sh admin@alemedu.com 'Admin@12345'
