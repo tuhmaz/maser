@@ -13,7 +13,9 @@ test("مراجعة الأخطاء: الخادم يصحّح الإجابة الف
   const startRes = await request.post(`${API_BASE_URL}/diagnostic/start`, {
     headers: { Authorization: `Bearer ${user.accessToken}` },
   });
-  expect(startRes.ok()).toBeTruthy();
+  if (!startRes.ok()) {
+    throw new Error(`فشل /diagnostic/start: ${startRes.status()} ${await startRes.text()}`);
+  }
   const attempt = await startRes.json();
 
   // تسليم فوري دون أي إجابة — كل الأسئلة تُحتسَب خاطئة وتُسجَّل كأخطاء (راجع
@@ -21,7 +23,9 @@ test("مراجعة الأخطاء: الخادم يصحّح الإجابة الف
   const submitRes = await request.post(`${API_BASE_URL}/attempts/${attempt.attempt.id}/submit`, {
     headers: { Authorization: `Bearer ${user.accessToken}` },
   });
-  expect(submitRes.ok()).toBeTruthy();
+  if (!submitRes.ok()) {
+    throw new Error(`فشل /attempts/${attempt.attempt.id}/submit: ${submitRes.status()} ${await submitRes.text()}`);
+  }
 
   // أول خطأ يُجدوَل افتراضيًا بعد 24 ساعة — نقدّم الموعد للآن حتى تظهر شاشة المراجعة
   forceMistakesDueNow(user.email);
